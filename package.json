@@ -1,0 +1,25 @@
+{
+  "name": "cljs-react",
+  "version": "0.1.0",
+  "description": "A modern React wrapper for ClojureScript",
+  "main": "dist/cljs-react.js",
+  "scripts": {
+    "watch": "shadow-cljs watch demo",
+    "build": "shadow-cljs release library",
+    "test": "shadow-cljs compile test && node target/test.js"
+  },
+  "keywords": [
+    "clojurescript",
+    "react",
+    "wrapper"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "shadow-cljs": "^2.28.14"
+  }
+}

@@ -1,0 +1,27 @@
+# Shadow-CLJS build artifacts
+.shadow-cljs/
+public/js/
+
+# ClojureScript/Clojure
+target/
+.cpcache/
+.nrepl-port
+.rebel_readline_history
+.clj-kondo/
+.lsp/
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

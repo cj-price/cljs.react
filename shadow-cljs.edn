@@ -1,0 +1,29 @@
+{:source-paths ["src"]
+
+ :dependencies []
+
+ :builds
+ {:library
+  {:target :node-library
+   :output-to "dist/cljs-react.js"
+   :exports {:default cljs.react/default}}
+
+  :demo
+  {:target :browser
+   :output-dir "public/js"
+   :asset-path "/js"
+   :modules {:main {:init-fn cljs.react.demo/init}}
+   :devtools {:http-root "public"
+              :http-port 8080}}
+
+  :test
+  {:target :node-test
+   :output-to "target/test.js"
+   :autorun true}
+
+  :benchmark
+  {:target :node-script
+   :main cljs.benchmark.core/-main
+   :output-to "target/benchmark.js"
+   :compiler-options {:optimizations :simple
+                      :source-map false}}}}

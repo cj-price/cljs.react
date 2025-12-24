@@ -1,0 +1,25 @@
+{;; Element Creation Thresholds
+ :element/simple              {:max-overhead-pct 50  :max-time-ms 0.01}
+ :element/with-props          {:max-overhead-pct 60  :max-time-ms 0.01}
+ :element/with-children       {:max-overhead-pct 50  :max-time-ms 0.01}
+ :element/nested              {:max-overhead-pct 50  :max-time-ms 0.05}
+
+ ;; Props Conversion Thresholds
+ :props/empty                 {:max-overhead-pct 100 :max-time-ms 0.005}
+ :props/shallow               {:max-overhead-pct 100 :max-time-ms 0.01}
+ :props/deep                  {:max-overhead-pct 150 :max-time-ms 0.02}
+ :props/with-vectors          {:max-overhead-pct 150 :max-time-ms 0.02}
+ :props/large                 {:max-overhead-pct 150 :max-time-ms 0.05}
+
+ ;; Component Performance Thresholds
+ :component/instantiation     {:max-overhead-pct 100 :max-time-ms 0.01}
+ :component/tree-deep         {:max-overhead-pct 60  :max-time-ms 0.05}
+ :component/tree-wide         {:max-overhead-pct 60  :max-time-ms 0.05}
+
+ ;; Memoization Thresholds
+ ;; Note: Higher overhead expected for structural equality vs shallow equality
+ :memoization/equality-shallow-hit  {:max-overhead-pct 200 :max-time-ms 0.005}
+ :memoization/equality-shallow-miss {:max-overhead-pct 200 :max-time-ms 0.005}
+ :memoization/equality-deep-hit     {:max-overhead-pct 300 :max-time-ms 0.01}
+ :memoization/equality-deep-miss    {:max-overhead-pct 300 :max-time-ms 0.01}
+ :memoization/equality-identity     {:max-overhead-pct 100 :max-time-ms 0.002}}
