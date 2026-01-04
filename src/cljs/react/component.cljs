@@ -2,6 +2,15 @@
   (:require ["react" :as react]
             [goog.object :as gobj]))
 
+(def ^:dynamic *create-element*
+  "Dynamic var holding the current element creation function.
+  Defaults to react/createElement but can be rebound to use alternative
+  renderers like emotion/jsx.
+
+  The function should have the signature:
+    (fn [type props & children] ...)"
+  react/createElement)
+
 (defn clj->js-props
   "Convert ClojureScript map to JavaScript object for React props.
   Handles nested structures without modifying prop names.
@@ -35,6 +44,9 @@
   For component types: props are wrapped in JS object with :cljs-props key.
   For DOM elements (strings): props are converted to JavaScript.
 
+  Uses *create-element* dynamic var which defaults to react/createElement
+  but can be rebound to use alternative renderers like emotion/jsx.
+
   Args:
     type: Component function or string tag (e.g., 'div')
     props: ClojureScript map (can be nil)
@@ -49,7 +61,7 @@
                       (clj->js-props props)
                       #js {:cljsProps props})
         js-children (to-array children)]
-    (apply react/createElement type react-props js-children)))
+    (apply *create-element* type react-props js-children)))
 
 (defn memo-component
   "Wrap component with React.memo using ClojureScript equality.
@@ -64,11 +76,16 @@
   Returns:
     Memoized React component"
   [component-fn]
-  (let [;; Wrapper that extracts CLJS props
+  (let [;; Wrapper that extracts CLJS props and children
         wrapper-fn
         (fn [js-props]
-          (let [cljs-props (gobj/get js-props "cljsProps")]
-            (component-fn cljs-props)))
+          (let [cljs-props (gobj/get js-props "cljsProps")
+                children (gobj/get js-props "children")
+                ;; Merge children into props if present
+                props-with-children (if (undefined? children)
+                                      cljs-props
+                                      (assoc cljs-props :children children))]
+            (component-fn props-with-children)))
 
         ;; Comparison using ClojureScript = for props, JS === for children
         are-equal?
@@ -100,3 +117,38 @@
   [component-fn]
   ;; Just use React.memo with default comparison (shallow equality)
   (react/memo component-fn))
+
+;; Custom renderer support
+
+(defn make-element-fn
+  "Create an Element-like function bound to a specific renderer.
+
+  Usage:
+    (def EmotionElement (make-element-fn emotion/jsx))
+    (EmotionElement {:tag \"div\"} \"Styled with Emotion\")
+
+  Returns a function with the same signature as Element but using
+  the provided renderer instead of react/createElement."
+  [renderer]
+  (fn [{:keys [tag] :as props} & children]
+    (let [element-type (or tag "div")
+          react-props (clj->js-props (dissoc props :tag))
+          js-children (to-array children)]
+      (apply renderer element-type react-props js-children))))
+
+(defn make-create-cljs-element-fn
+  "Create a create-cljs-element-like function bound to a specific renderer.
+
+  Usage:
+    (def emotion-create-element (make-create-cljs-element-fn emotion/jsx))
+    (emotion-create-element \"div\" {:className \"styled\"} child1 child2)
+
+  Returns a function with the same signature as create-cljs-element but using
+  the provided renderer instead of react/createElement."
+  [renderer]
+  (fn [type props & children]
+    (let [react-props (if (string? type)
+                        (clj->js-props props)
+                        #js {:cljsProps props})
+          js-children (to-array children)]
+      (apply renderer type react-props js-children))))
