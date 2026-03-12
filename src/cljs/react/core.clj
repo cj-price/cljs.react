@@ -37,9 +37,11 @@
                          [nil args])
         [arg-vec & body] args
         as-element? (= options :as-element)
+        forward-ref? (= options :forward-ref)
         inner-name (symbol (str name "-inner"))
         props-sym (if (empty? arg-vec) '_ (first arg-vec))]
-    (if as-element?
+    (cond
+      as-element?
       ;; :as-element version - accepts raw JS props
       `(do
          ;; Define the inner component function
@@ -52,6 +54,19 @@
                ([] (react/createElement memoized# (cljs.react.component/clj->js-props {})))
                ([props#] (react/createElement memoized# (cljs.react.component/clj->js-props props#)))
                ([props# & children#] (apply react/createElement memoized# (cljs.react.component/clj->js-props props#) children#))))))
+      forward-ref?
+      ;; :forward-ref version - wraps with React.forwardRef + memo
+      `(do
+         (defn ~inner-name [~props-sym]
+           ~@body)
+         (def ~name
+           (let [memoized# (cljs.react.component/memo-forward-ref ~inner-name)]
+             (fn
+               ([] (cljs.react.component/create-cljs-element memoized# {}))
+               ([props#] (cljs.react.component/create-cljs-element memoized# props#))
+               ([props# & children#] (apply cljs.react.component/create-cljs-element memoized# props# children#))))))
+
+      :else
       ;; Regular version - uses cljsProps wrapper
       `(do
          ;; Define the inner component function

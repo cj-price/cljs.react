@@ -1,6 +1,7 @@
 (ns cljs.react.component
   (:require ["react" :as react]
-            [goog.object :as gobj]))
+            [goog.object :as gobj]
+            [cljs.react.hook :as hook]))
 
 (def ^:dynamic *create-element*
   "Dynamic var holding the current element creation function.
@@ -152,3 +153,24 @@
                         #js {:cljsProps props})
           js-children (to-array children)]
       (apply renderer type react-props js-children))))
+
+(defn forward-ref
+  "Wrap a CLJS component fn with React.forwardRef.
+  The forwarded ref is wrapped in a RefAtom and injected as :ref in the props map."
+  [component-fn]
+  (react/forwardRef
+    (fn [js-props ref]
+      (let [cljs-props (gobj/get js-props "cljsProps")
+            children (gobj/get js-props "children")
+            props (cond-> (assoc cljs-props :ref (hook/->RefAtom ref))
+                    (not (undefined? children))
+                    (assoc :children children))]
+        (component-fn props)))))
+
+(defn memo-forward-ref
+  "Combine forward-ref + React.memo with CLJS equality comparison."
+  [component-fn]
+  (react/memo (forward-ref component-fn)
+    (fn [prev next]
+      (and (= (gobj/get prev "cljsProps") (gobj/get next "cljsProps"))
+           (identical? (gobj/get prev "children") (gobj/get next "children"))))))

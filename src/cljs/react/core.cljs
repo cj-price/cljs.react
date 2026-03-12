@@ -1,6 +1,7 @@
 (ns cljs.react.core
   (:require
    [cljs.react.component :as component]
+   [cljs.react.hook :as hook]
    [cljs.react.db :as db]))
 
 (defn Element
@@ -24,6 +25,10 @@
 ;; Re-export custom renderer utilities
 (def make-element-fn component/make-element-fn)
 (def make-create-cljs-element-fn component/make-create-cljs-element-fn)
+
+;; Re-export ref utilities
+(def react-ref hook/react-ref)
+(def forward-ref component/forward-ref)
 
 ;; Re-export db utilities
 (def DBProvider db/DBProvider)

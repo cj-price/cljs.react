@@ -47,6 +47,9 @@
   ([effect-fn deps]
    (react/useLayoutEffect effect-fn (cljs-deps deps))))
 
+(defprotocol IReactRef
+  (-react-ref [this]))
+
 (deftype RefAtom [ref]
   IDeref
   (-deref [_] (.-current ref))
@@ -56,11 +59,26 @@
   (-swap! [o f] (-reset! o (f (.-current ref))))
   (-swap! [o f a] (-reset! o (f (.-current ref) a)))
   (-swap! [o f a b] (-reset! o (f (.-current ref) a b)))
-  (-swap! [o f a b xs] (-reset! o (apply f (.-current ref) a b xs))))
+  (-swap! [o f a b xs] (-reset! o (apply f (.-current ref) a b xs)))
+  IReactRef
+  (-react-ref [_] ref))
 
 (defn use-ref
   ([] (RefAtom. (react/useRef nil)))
   ([initial] (RefAtom. (react/useRef initial))))
+
+(defn react-ref
+  "Extract the raw React ref object from a RefAtom.
+  Use this when passing refs to DOM elements or JS components."
+  [ref-atom]
+  (-react-ref ref-atom))
+
+(defn use-imperative-handle
+  "Customize the handle exposed to parent components when using forward-ref."
+  ([ref create-handle]
+   (react/useImperativeHandle (-react-ref ref) create-handle))
+  ([ref create-handle deps]
+   (react/useImperativeHandle (-react-ref ref) create-handle (cljs-deps deps))))
 
 (def use-context react/useContext)
 

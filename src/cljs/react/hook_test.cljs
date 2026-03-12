@@ -2,9 +2,10 @@
   (:require
    [cljs.test :refer [deftest testing is async use-fixtures]]
    [cljs.react.hook :as hook]
+   [cljs.react.component :as component]
    ["global-jsdom/register"]
    ["react" :as react]
-   ["@testing-library/react" :refer [renderHook act]]))
+   ["@testing-library/react" :refer [renderHook act render]]))
 
 (deftest state-atom-test
   (testing "StateAtom returns derefable value"
@@ -264,3 +265,53 @@
                              #js {:wrapper wrapper})
           value (.. result -result -current)]
       (is (= "provided" value)))))
+
+(deftest react-ref-test
+  (testing "react-ref extracts raw React ref from RefAtom"
+    (let [result (renderHook #(hook/use-ref 42))
+          ref-atom (.. result -result -current)
+          raw-ref (hook/react-ref ref-atom)]
+      (is (= 42 (.-current raw-ref)))))
+
+  (testing "react-ref shares state with RefAtom"
+    (let [result (renderHook #(hook/use-ref "initial"))
+          ref-atom (.. result -result -current)
+          raw-ref (hook/react-ref ref-atom)]
+      (reset! ref-atom "updated")
+      (is (= "updated" (.-current raw-ref)))
+      (set! (.-current raw-ref) "from-js")
+      (is (= "from-js" @ref-atom)))))
+
+(deftest use-imperative-handle-test
+  (testing "use-imperative-handle exposes custom handle"
+    (let [parent-ref (react/createRef)
+          child-component
+          (component/forward-ref
+            (fn [{:keys [ref]}]
+              (hook/use-imperative-handle ref
+                (fn [] #js {:focus (fn [] "focused")
+                            :getValue (fn [] 42)}))
+              (react/createElement "div" nil "child")))
+          parent-component
+          (fn []
+            (react/createElement child-component
+              #js {:cljsProps {} :ref parent-ref}))]
+      (render (react/createElement parent-component))
+      (is (= "focused" (.focus (.-current parent-ref))))
+      (is (= 42 (.getValue (.-current parent-ref)))))))
+
+(deftest forward-ref-component-test
+  (testing "forward-ref component receives ref in props"
+    (let [ext-ref (react/createRef)
+          my-input
+          (component/forward-ref
+            (fn [{:keys [ref placeholder]}]
+              (react/createElement "input"
+                #js {:ref (hook/react-ref ref)
+                     :placeholder placeholder})))
+          result (render
+                   (react/createElement my-input
+                     #js {:cljsProps {:placeholder "type here"}
+                          :ref ext-ref}))]
+      (is (some? (.-current ext-ref)))
+      (is (= "INPUT" (.. ext-ref -current -tagName))))))
