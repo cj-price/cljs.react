@@ -1,6 +1,7 @@
 (ns cljs.react.core
-  (:require ["react" :as react]
-            [cljs.react.component :as component]))
+  (:require
+   [cljs.react.component :as component]
+   [cljs.react.db :as db]))
 
 (defn Element
   "Create a React element from ClojureScript data structures.
@@ -24,5 +25,7 @@
 (def make-element-fn component/make-element-fn)
 (def make-create-cljs-element-fn component/make-create-cljs-element-fn)
 
-;; Export for library build
-(def default #js {:Element Element})
+;; Re-export db utilities
+(def DBProvider db/DBProvider)
+(def use-db db/use-db)
+(def use-cursor db/use-cursor)

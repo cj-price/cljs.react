@@ -20,6 +20,9 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "global-jsdom": "^27.0.0",
+    "jsdom": "^27.4.0",
     "shadow-cljs": "^2.28.14"
   }
 }
