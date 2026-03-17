@@ -24,17 +24,14 @@
       #js {}
       (reduce-kv
         (fn [^js js-obj k v]
-          ;; Use aset for direct property assignment (fastest)
-          (aset js-obj
-                ;; Convert key - inline keyword check for speed
-                (if (keyword? k)
-                  (name k)
-                  (str k))
-                ;; Convert value - inline checks for speed
-                (cond
-                  (map? v) (clj->js-props v)
-                  (sequential? v) (to-array v)
-                  :else v))
+          (let [prop-name (if (keyword? k) (name k) (str k))]
+            (aset js-obj prop-name
+                  (if (and (= prop-name "ref") (satisfies? hook/IReactRef v))
+                    (hook/-react-ref v)
+                    (cond
+                      (map? v) (clj->js-props v)
+                      (sequential? v) (to-array v)
+                      :else v))))
           js-obj)
         #js {}
         props))))

@@ -45,7 +45,7 @@
       ;; :as-element version - accepts raw JS props
       `(do
          ;; Define the inner component function
-         (defn ~inner-name [~props-sym]
+         (defn ^:private ~inner-name [~props-sym]
            ~@body)
          ;; Define as regular React element (uses react/createElement directly)
          (def ~name
@@ -57,7 +57,7 @@
       forward-ref?
       ;; :forward-ref version - wraps with React.forwardRef + memo
       `(do
-         (defn ~inner-name [~props-sym]
+         (defn ^:private ~inner-name [~props-sym]
            ~@body)
          (def ~name
            (let [memoized# (cljs.react.component/memo-forward-ref ~inner-name)]
@@ -70,7 +70,7 @@
       ;; Regular version - uses cljsProps wrapper
       `(do
          ;; Define the inner component function
-         (defn ~inner-name [~props-sym]
+         (defn ^:private ~inner-name [~props-sym]
            ~@body)
          ;; Define the outer component as a function that creates React elements
          ;; Supports both 0-arity and varargs

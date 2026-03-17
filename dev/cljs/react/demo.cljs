@@ -1,8 +1,10 @@
 (ns cljs.react.demo
   (:require ["react" :as react]
             ["react-dom/client" :as react-dom]
+            ["prismjs" :as Prism]
+            ["prismjs/components/prism-clojure"]
             [cljs.react.core :refer [Element DBProvider use-cursor]]
-            [cljs.react.hook :refer [use-state]]
+            [cljs.react.hook :refer [use-ref use-effect use-memo use-callback use-state]]
             [clojure.string :as str])
   (:require-macros [cljs.react.core :refer [defnc]]))
 
@@ -12,13 +14,18 @@
 
 (defnc CodeAndOutput
   [{:keys [code title children]}]
-  (Element {:tag "div" :className "glass"}
+  (Element {:tag "div"}
     (when title
       (Element {:tag "h4"} title))
     (Element {:tag "div" :className "demo-columns"}
       (Element {:tag "div"}
-        (Element {:tag "pre"}
-          (Element {:tag "code"} code)))
+        (Element {:tag "pre" :className "language-clojure"}
+          (Element {:tag "code"
+                    :className "language-clojure"
+                    :dangerouslySetInnerHTML
+                    #js {:__html (.highlight Prism code
+                                   (.-clojure (.-languages Prism))
+                                   "clojure")}})))
       (Element {:tag "div" :className "demo-output"}
         children))))
 
@@ -49,77 +56,79 @@
 
 (defnc Counter
   []
-  (let [[count set-count] (react/useState 0)]
+  (let [count (use-state 0)]
     (Element {:tag "div" :className "space-y-4"}
       (Element {:tag "div" :className "text-center"}
-        (Element {:tag "div" :className "text-5xl font-bold text-koi-orange mb-2"} count)
+        (Element {:tag "div" :className "text-5xl font-bold text-koi-orange mb-2"} @count)
         (Element {:tag "p" :className "text-sm text-gray-600"} "Current Count"))
       (Element {:tag "div" :className "flex gap-2 justify-center"}
         (Element {:tag "button"
                   :className "px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300"
-                  :onClick #(set-count dec)}
+                  :onClick #(swap! count dec)}
           "−")
         (Element {:tag "button"
                   :className "px-6 py-2 bg-gray-100 text-gray-600 rounded-lg font-medium hover:bg-gray-200"
-                  :onClick #(set-count (fn [c] 0))}
+                  :onClick #(reset! count 0)}
           "Reset")
         (Element {:tag "button"
                   :className "px-6 py-2 bg-koi-orange text-white rounded-lg font-medium shadow-lg"
-                  :onClick #(set-count inc)}
+                  :onClick #(swap! count inc)}
           "+")))))
 
 (defnc TextInput
   []
-  (let [[text set-text] (react/useState "")]
+  (let [text (use-state "")]
     (Element {:tag "div" :className "space-y-3"}
       (Element {:tag "input"
                 :type "text"
-                :value text
+                :value @text
                 :placeholder "Type something..."
                 :className "w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-koi-orange transition-colors"
-                :onChange #(set-text (-> % .-target .-value))})
+                :onChange #(reset! text (-> % .-target .-value))})
       (Element {:tag "div" :className "flex justify-between text-sm"}
         (Element {:tag "p" :className "text-gray-600"}
           "You typed: "
           (Element {:tag "span" :className "font-medium text-gray-900"}
-            (if (empty? text) "(nothing)" text)))
+            (if (empty? @text) "(nothing)" @text)))
         (Element {:tag "p" :className "text-gray-500"}
           "Characters: "
           (Element {:tag "span" :className "font-semibold text-koi-orange"}
-            (count text)))))))
+            (count @text)))))))
 
 (defnc TodoList
   []
-  (let [[todos set-todos] (react/useState [])
-        [input set-input] (react/useState "")
+  (let [todos (use-state [])
+        input (use-state "")
         add-todo (fn []
-                   (when-not (empty? input)
-                     (set-todos #(conj % {:id (random-uuid)
-                                          :text input
-                                          :done false}))
-                     (set-input "")))
+                   (when-not (empty? @input)
+                     (swap! todos conj {:id (random-uuid)
+                                        :text @input
+                                        :done false})
+                     (reset! input "")))
         toggle-todo (fn [id]
-                      (set-todos #(mapv (fn [todo]
-                                          (if (= (:id todo) id)
-                                            (update todo :done not)
-                                            todo))
-                                        %)))
+                      (swap! todos (fn [ts]
+                                     (mapv (fn [todo]
+                                             (if (= (:id todo) id)
+                                               (update todo :done not)
+                                               todo))
+                                           ts))))
         remove-todo (fn [id]
-                      (set-todos #(filterv (fn [todo] (not= (:id todo) id)) %)))]
+                      (swap! todos (fn [ts]
+                                     (filterv (fn [todo] (not= (:id todo) id)) ts))))]
     (Element {:tag "div" :className "demo-box"}
-      (Element {:tag "h3"} "Todo List (" (count todos) " items)")
+      (Element {:tag "h3"} "Todo List (" (count @todos) " items)")
       (Element {:tag "div" :className "input-group"}
         (Element {:tag "input"
                   :type "text"
-                  :value input
+                  :value @input
                   :placeholder "Add a todo..."
                   :onKeyPress #(when (= (.-key %) "Enter") (add-todo))
-                  :onChange #(set-input (-> % .-target .-value))})
+                  :onChange #(reset! input (-> % .-target .-value))})
         (Element {:tag "button"
                   :onClick add-todo}
           "Add"))
       (Element {:tag "ul" :className "todo-list"}
-        (for [todo todos]
+        (for [todo @todos]
           (Element {:tag "li"
                     :key (str (:id todo))
                     :className (if (:done todo) "done" "")}
@@ -139,29 +148,29 @@
 
 (defnc EffectDemo
   []
-  (let [[count set-count] (react/useState 0)
-        [message set-message] (react/useState "Component mounted")]
+  (let [count (use-state 0)
+        message (use-state "Component mounted")]
     ;; Effect runs on mount and unmount
-    (react/useEffect
+    (use-effect
      (fn []
-       (set-message "Component mounted")
+       (reset! message "Component mounted")
        ;; Cleanup function
        (fn [] (js/console.log "Component will unmount")))
-     #js []) ; Empty deps = run once on mount
+     []) ; Empty deps = run once on mount
 
     ;; Effect runs when count changes
-    (react/useEffect
+    (use-effect
      (fn []
-       (set-message (str "Count changed to " count))
+       (reset! message (str "Count changed to " @count))
        js/undefined)
-     #js [count])
+     [@count])
 
     (Element {:tag "div" :className "demo-box"}
       (Element {:tag "h3"} "useEffect Demo")
-      (Element {:tag "p"} "Count: " count)
-      (Element {:tag "p" :className "effect-message"} "Message: " message)
+      (Element {:tag "p"} "Count: " @count)
+      (Element {:tag "p" :className "effect-message"} "Message: " @message)
       (Element {:tag "button"
-                :onClick #(set-count inc)}
+                :onClick #(swap! count inc)}
         "Increment"))))
 
 ;; =============================================================================
@@ -200,10 +209,10 @@
 
 (defnc RefDemo
   []
-  (let [input-ref (react/useRef nil)
+  (let [input-ref (use-ref)
         [value set-value] (react/useState "")
         focus-input (fn []
-                      (.focus (.-current input-ref)))]
+                      (.focus @input-ref))]
     (Element {:tag "div" :className "demo-box"}
       (Element {:tag "h3"} "useRef Demo")
       (Element {:tag "input"
@@ -223,16 +232,16 @@
 
 (defnc ExpensiveComponent
   [{:keys [count on-click]}]
-  (let [expensive-value (react/useMemo
+  (let [expensive-value (use-memo
                          (fn []
                            (js/console.log "Computing expensive value...")
                            (reduce + (range count)))
-                         #js [count])
-        memoized-callback (react/useCallback
+                         [count])
+        memoized-callback (use-callback
                            (fn []
                              (js/console.log "Button clicked with count:" count)
                              (on-click))
-                           #js [count on-click])]
+                           [count on-click])]
     (Element {:tag "div" :className "demo-box"}
       (Element {:tag "h3"} "useMemo & useCallback")
       (Element {:tag "p"} "Count: " count)
@@ -248,132 +257,6 @@
                          :on-click #(set-count inc)})))
 
 ;; =============================================================================
-;; Conditional Rendering
-;; =============================================================================
-
-(defnc ConditionalDemo
-  []
-  (let [[show-content set-show-content] (react/useState true)
-        [mode set-mode] (react/useState :loading)]
-    (Element {:tag "div" :className "demo-box"}
-      (Element {:tag "h3"} "Conditional Rendering")
-      (Element {:tag "div" :className "button-group"}
-        (Element {:tag "button"
-                  :onClick #(set-show-content not)}
-          (if show-content "Hide Content" "Show Content"))
-        (Element {:tag "button"
-                  :onClick #(set-mode :loading)}
-          "Loading")
-        (Element {:tag "button"
-                  :onClick #(set-mode :success)}
-          "Success")
-        (Element {:tag "button"
-                  :onClick #(set-mode :error)}
-          "Error"))
-      (when show-content
-        (Element {:tag "div" :className "conditional-content"}
-          (case mode
-            :loading (Element {:tag "p" :className "loading"} "⏳ Loading...")
-            :success (Element {:tag "p" :className "success"} "✅ Success!")
-            :error (Element {:tag "p" :className "error"} "❌ Error occurred!")
-            (Element {:tag "p"} "Unknown state")))))))
-
-;; =============================================================================
-;; Lists and Keys
-;; =============================================================================
-
-(defnc ItemList
-  [{:keys [items on-remove]}]
-  (Element {:tag "ul" :className "item-list"}
-    (for [item items]
-      (Element {:tag "li" :key (:id item)}
-        (Element {:tag "span" :className "item-name"} (:name item))
-        (Element {:tag "span" :className "item-value"} " - " (:value item))
-        (Element {:tag "button"
-                  :className "delete-btn"
-                  :onClick #(on-remove (:id item))}
-          "Remove")))))
-
-(defnc ListDemo
-  []
-  (let [[items set-items] (react/useState
-                            [{:id 1 :name "Alpha" :value 100}
-                             {:id 2 :name "Beta" :value 200}
-                             {:id 3 :name "Gamma" :value 300}])
-        add-item (fn []
-                   (let [new-id (inc (apply max (map :id items)))
-                         names ["Delta" "Epsilon" "Zeta" "Eta" "Theta"]
-                         name (rand-nth names)
-                         value (* 100 new-id)]
-                     (set-items #(conj % {:id new-id :name name :value value}))))
-        remove-item (fn [id]
-                      (set-items #(filterv (fn [item] (not= (:id item) id)) %)))]
-    (Element {:tag "div" :className "demo-box"}
-      (Element {:tag "h3"} "Lists with Keys")
-      (Element {:tag "button" :onClick add-item} "Add Item")
-      (ItemList {:items items :on-remove remove-item}))))
-
-;; =============================================================================
-;; Forms
-;; =============================================================================
-
-(defnc FormDemo
-  []
-  (let [[form-data set-form-data] (react/useState {:name ""
-                                                    :email ""
-                                                    :role "user"
-                                                    :agree false})
-        [submitted set-submitted] (react/useState nil)
-        update-field (fn [field value]
-                       (set-form-data #(assoc % field value)))
-        handle-submit (fn [e]
-                        (.preventDefault e)
-                        (set-submitted form-data))]
-    (Element {:tag "div" :className "demo-box"}
-      (Element {:tag "h3"} "Form Handling")
-      (Element {:tag "form" :onSubmit handle-submit}
-        (Element {:tag "div" :className "form-group"}
-          (Element {:tag "label"} "Name:")
-          (Element {:tag "input"
-                    :type "text"
-                    :value (:name form-data)
-                    :onChange #(update-field :name (-> % .-target .-value))}))
-
-        (Element {:tag "div" :className "form-group"}
-          (Element {:tag "label"} "Email:")
-          (Element {:tag "input"
-                    :type "email"
-                    :value (:email form-data)
-                    :onChange #(update-field :email (-> % .-target .-value))}))
-
-        (Element {:tag "div" :className "form-group"}
-          (Element {:tag "label"} "Role:")
-          (Element {:tag "select"
-                    :value (:role form-data)
-                    :onChange #(update-field :role (-> % .-target .-value))}
-            (Element {:tag "option" :value "user"} "User")
-            (Element {:tag "option" :value "admin"} "Admin")
-            (Element {:tag "option" :value "moderator"} "Moderator")))
-
-        (Element {:tag "div" :className "form-group checkbox"}
-          (Element {:tag "label"}
-            (Element {:tag "input"
-                      :type "checkbox"
-                      :checked (:agree form-data)
-                      :onChange #(update-field :agree (-> % .-target .-checked))})
-            " I agree to the terms"))
-
-        (Element {:tag "button"
-                  :type "submit"
-                  :disabled (not (:agree form-data))}
-          "Submit"))
-
-      (when submitted
-        (Element {:tag "div" :className "form-result"}
-          (Element {:tag "h4"} "Form Submitted:")
-          (Element {:tag "pre"} (pr-str submitted)))))))
-
-;; =============================================================================
 ;; Custom Hooks
 ;; =============================================================================
 
@@ -381,24 +264,24 @@
   "Custom hook for toggle state"
   [initial-value]
   (let [[value set-value] (react/useState initial-value)
-        toggle (react/useCallback
+        toggle (use-callback
                 (fn [] (set-value not))
-                #js [])]
+                [])]
     [value toggle]))
 
 (defn use-counter
   "Custom hook for counter with min/max bounds"
   [initial min max]
   (let [[count set-count] (react/useState initial)
-        increment (react/useCallback
+        increment (use-callback
                    (fn [] (set-count #(min max (inc %))))
-                   #js [max])
-        decrement (react/useCallback
+                   [max])
+        decrement (use-callback
                    (fn [] (set-count #(cljs.core/max min (dec %))))
-                   #js [min])
-        reset (react/useCallback
+                   [min])
+        reset (use-callback
                (fn [] (set-count initial))
-               #js [initial])]
+               [initial])]
     {:count count
      :increment increment
      :decrement decrement
@@ -487,11 +370,11 @@
 
 (defnc RenderCounter
   [{:keys [name]}]
-  (let [render-count (react/useRef 0)]
-    (set! (.-current render-count) (inc (.-current render-count)))
+  (let [render-count (use-ref 0)]
+    (swap! render-count inc)
     (Element {:tag "div" :className "render-counter"}
       (Element {:tag "strong"} name)
-      (Element {:tag "span"} " - Renders: " (.-current render-count)))))
+      (Element {:tag "span"} " - Renders: " @render-count))))
 
 (defnc MemoizationDemo
   []
@@ -590,11 +473,10 @@
 
 (defnc App
   []
-  (let [[selected-section set-selected-section] (react/useState :all)
+  (let [[selected-section set-selected-section] (react/useState :basics)
         sections [{:id :basics :title "Basic Components" :emoji "🧱"}
                   {:id :state :title "State Management" :emoji "📊"}
                   {:id :effects :title "Side Effects" :emoji "⚡"}
-                  {:id :forms :title "Forms" :emoji "📝"}
                   {:id :advanced :title "Advanced" :emoji "🚀"}
                   {:id :db :title "Global State" :emoji "🗄️"}]]
     (Element {:tag "div"}
@@ -610,10 +492,6 @@
       ;; Navigation
       (Element {:tag "nav"}
         (Element {:tag "div" :className "container"}
-          (Element {:tag "button"
-                    :className (if (= selected-section :all) "active" "")
-                    :onClick #(set-selected-section :all)}
-            "Show All")
           (for [section sections]
             (Element {:tag "button"
                       :key (:id section)
@@ -652,17 +530,17 @@
 
             (CodeAndOutput
              {:title "Counter with useState"
-              :code "(defnc Counter\n  []\n  (let [[count set-count] (react/useState 0)]\n    (Element {:tag \"div\"}\n      (Element {:tag \"h3\"} \"Count: \" count)\n      (Element {:tag \"button\"\n                :onClick #(set-count dec)}\n        \"Decrement\")\n      (Element {:tag \"button\"\n                :onClick #(set-count inc)}\n        \"Increment\"))))"}
+              :code "(defnc Counter\n  []\n  (let [count (use-state 0)]\n    (Element {:tag \"div\"}\n      (Element {:tag \"h3\"} \"Count: \" @count)\n      (Element {:tag \"button\"\n                :onClick #(swap! count dec)}\n        \"Decrement\")\n      (Element {:tag \"button\"\n                :onClick #(swap! count inc)}\n        \"Increment\"))))"}
              (Counter))
 
             (CodeAndOutput
              {:title "Text Input"
-              :code "(defnc TextInput\n  []\n  (let [[text set-text] (react/useState \"\")]\n    (Element {:tag \"div\"}\n      (Element {:tag \"input\"\n                :value text\n                :onChange #(set-text\n                            (-> % .-target .-value))})\n      (Element {:tag \"p\"}\n        \"You typed: \" text))))"}
+              :code "(defnc TextInput\n  []\n  (let [text (use-state \"\")]\n    (Element {:tag \"div\"}\n      (Element {:tag \"input\"\n                :value @text\n                :onChange #(reset! text\n                            (-> % .-target .-value))})\n      (Element {:tag \"p\"}\n        \"You typed: \" @text))))"}
              (TextInput))
 
             (CodeAndOutput
              {:title "Todo List"
-              :code "(defnc TodoList\n  []\n  (let [[todos set-todos] (react/useState [])\n        [input set-input] (react/useState \"\")\n        add-todo (fn []\n                   (when-not (empty? input)\n                     (set-todos #(conj % {:id (random-uuid)\n                                          :text input\n                                          :done false}))\n                     (set-input \"\")))\n        toggle (fn [id]\n                 (set-todos #(mapv\n                              (fn [todo]\n                                (if (= (:id todo) id)\n                                  (update todo :done not)\n                                  todo))\n                              %)))]\n    ...))"}
+              :code "(defnc TodoList\n  []\n  (let [todos (use-state [])\n        input (use-state \"\")\n        add-todo (fn []\n                   (when-not (empty? @input)\n                     (swap! todos conj {:id (random-uuid)\n                                         :text @input\n                                         :done false})\n                     (reset! input \"\")))\n        toggle (fn [id]\n                 (swap! todos\n                   (fn [ts]\n                     (mapv\n                       (fn [todo]\n                         (if (= (:id todo) id)\n                           (update todo :done not)\n                           todo))\n                       ts))))]\n    ...))"}
              (TodoList))
 
             (CodeAndOutput
@@ -677,38 +555,18 @@
 
             (CodeAndOutput
              {:title "useEffect Hook"
-              :code "(defnc EffectDemo\n  []\n  (let [[count set-count] (react/useState 0)\n        [message set-message]\n          (react/useState \"Mounted\")]\n    ;; Effect runs on mount\n    (react/useEffect\n      (fn []\n        (set-message \"Component mounted\")\n        ;; Cleanup function\n        (fn [] (js/console.log \"Unmount\")))\n      #js [])\n    ;; Effect runs when count changes\n    (react/useEffect\n      (fn []\n        (set-message (str \"Count: \" count))\n        js/undefined)\n      #js [count])\n    ...))"}
+              :code "(defnc EffectDemo\n  []\n  (let [count (use-state 0)\n        message (use-state \"Mounted\")]\n    ;; Effect runs on mount\n    (use-effect\n      (fn []\n        (reset! message \"Component mounted\")\n        ;; Cleanup function\n        (fn [] (js/console.log \"Unmount\")))\n      [])\n    ;; Effect runs when count changes\n    (use-effect\n      (fn []\n        (reset! message (str \"Count: \" @count))\n        js/undefined)\n      [@count])\n    ...))"}
              (EffectDemo))
 
             (CodeAndOutput
              {:title "useRef Hook"
-              :code "(defnc RefDemo\n  []\n  (let [input-ref (react/useRef nil)\n        focus-input (fn []\n                      (.focus (.-current input-ref)))]\n    (Element {:tag \"div\"}\n      (Element {:tag \"input\"\n                :ref input-ref\n                :type \"text\"})\n      (Element {:tag \"button\"\n                :onClick focus-input}\n        \"Focus Input\"))))"}
+              :code "(defnc RefDemo\n  []\n  (let [input-ref (use-ref)\n        focus-input (fn []\n                      (.focus @input-ref))]\n    (Element {:tag \"div\"}\n      (Element {:tag \"input\"\n                :ref input-ref\n                :type \"text\"})\n      (Element {:tag \"button\"\n                :onClick focus-input}\n        \"Focus Input\"))))"}
              (RefDemo))
 
             (CodeAndOutput
              {:title "Custom Hooks"
-              :code "(defn use-toggle\n  [initial-value]\n  (let [[value set-value]\n          (react/useState initial-value)\n        toggle (react/useCallback\n                 (fn [] (set-value not))\n                 #js [])]\n    [value toggle]))\n\n(defnc CustomHookDemo\n  []\n  (let [[is-on toggle] (use-toggle false)]\n    (Element {:tag \"div\"}\n      (Element {:tag \"p\"} \"Status: \"\n        (if is-on \"ON\" \"OFF\"))\n      (Element {:tag \"button\"\n                :onClick toggle}\n        \"Toggle\"))))"}
+              :code "(defn use-toggle\n  [initial-value]\n  (let [[value set-value]\n          (react/useState initial-value)\n        toggle (use-callback\n                 (fn [] (set-value not))\n                 [])]\n    [value toggle]))\n\n(defnc CustomHookDemo\n  []\n  (let [[is-on toggle] (use-toggle false)]\n    (Element {:tag \"div\"}\n      (Element {:tag \"p\"} \"Status: \"\n        (if is-on \"ON\" \"OFF\"))\n      (Element {:tag \"button\"\n                :onClick toggle}\n        \"Toggle\"))))"}
              (CustomHooksDemo))))
-
-        ;; Forms
-        (when (or (= selected-section :all) (= selected-section :forms))
-          (Element {:tag "section"}
-            (Element {:tag "h2"} "📝 Forms & Input")
-
-            (CodeAndOutput
-             {:title "Form Handling"
-              :code "(defnc FormDemo\n  []\n  (let [[form-data set-form-data]\n          (react/useState {:name \"\"\n                           :email \"\"\n                           :role \"user\"\n                           :agree false})\n        update-field\n          (fn [field value]\n            (set-form-data #(assoc % field value)))\n        handle-submit\n          (fn [e]\n            (.preventDefault e)\n            (js/console.log form-data))]\n    (Element {:tag \"form\"\n              :onSubmit handle-submit}\n      ...)))"}
-             (FormDemo))
-
-            (CodeAndOutput
-             {:title "Conditional Rendering"
-              :code "(defnc ConditionalDemo\n  []\n  (let [[mode set-mode]\n          (react/useState :loading)]\n    (Element {:tag \"div\"}\n      (case mode\n        :loading (Element {:tag \"p\"}\n                   \"⏳ Loading...\")\n        :success (Element {:tag \"p\"}\n                   \"✅ Success!\")\n        :error (Element {:tag \"p\"}\n                 \"❌ Error!\")))))\n"}
-             (ConditionalDemo))
-
-            (CodeAndOutput
-             {:title "Lists with Keys"
-              :code "(defnc ListDemo\n  []\n  (let [[items set-items]\n          (react/useState\n            [{:id 1 :name \"Alpha\"}\n             {:id 2 :name \"Beta\"}])]\n    (Element {:tag \"ul\"}\n      (for [item items]\n        (Element {:tag \"li\"\n                  :key (:id item)}\n          (:name item))))))\n"}
-             (ListDemo))))
 
         ;; Advanced
         (when (or (= selected-section :all) (= selected-section :advanced))
@@ -727,7 +585,7 @@
 
             (CodeAndOutput
              {:title "Memoization with React.memo"
-              :code "(defnc RenderCounter\n  [{:keys [name]}]\n  (let [count (react/useRef 0)]\n    (set! (.-current count)\n          (inc (.-current count)))\n    (Element {:tag \"div\"}\n      (Element {:tag \"strong\"} name)\n      (Element {:tag \"span\"}\n        \" - Renders: \"\n        (.-current count)))))\n\n;; defnc automatically wraps\n;; components with React.memo\n;; using CLJS equality"}
+              :code "(defnc RenderCounter\n  [{:keys [name]}]\n  (let [count (use-ref 0)]\n    (swap! count inc)\n    (Element {:tag \"div\"}\n      (Element {:tag \"strong\"} name)\n      (Element {:tag \"span\"}\n        \" - Renders: \"\n        @count))))\n\n;; defnc automatically wraps\n;; components with React.memo\n;; using CLJS equality"}
              (MemoizationDemo))))
 
         ;; Global State
@@ -765,9 +623,15 @@
                         :target "_blank"}
                 "React")))))))
 
+(defonce root (atom nil))
+
+(defn ^:dev/after-load reload []
+  (when @root
+    (.render @root (App {}))))
+
 (defn ^:export init
   "Initialize the React application using React 18+ createRoot API"
   []
   (when-let [root-el (.getElementById js/document "app")]
-    (let [root (react-dom/createRoot root-el)]
-      (.render root (App {})))))
+    (reset! root (react-dom/createRoot root-el))
+    (.render @root (App {}))))

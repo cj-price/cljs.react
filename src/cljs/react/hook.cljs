@@ -105,12 +105,17 @@
 
 (def use-deferred-value react/useDeferredValue)
 
-(defn use-state
+(defn use-atom
   "Subscribe to a ClojureScript atom. Returns the current value and re-renders on changes."
   [atom]
   (use-sync-external-store
     (fn [callback]
-      (let [key (gensym "use-state")]
+      (let [key (gensym "use-atom")]
         (add-watch atom key (fn [_ _ _ _] (callback)))
         #(remove-watch atom key)))
     (fn [] @atom)))
+
+(defn use-state
+  "Local component state. Returns a StateAtom that supports deref, reset!, and swap!."
+  [initial]
+  (StateAtom. (react/useState initial)))

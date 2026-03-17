@@ -1,1 +1,1 @@
-/home/cj/Projects/expedition/config/cljs.react/shell.nix
+/nix/store/smhlky40mdc63fpl5h77n75rbvnkpvh9-home-manager-files/Projects/cljs.react/shell.nix

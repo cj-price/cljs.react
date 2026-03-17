@@ -53,7 +53,7 @@
 (defn use-db
   "Subscribe to the entire db. Returns the current value."
   []
-  (hook/use-state (use-db-atom)))
+  (hook/use-atom (use-db-atom)))
 
 (defn use-cursor
   "Subscribe to a path in the db. Returns a cursor that can be deref'd and updated.
@@ -73,4 +73,4 @@
                        (fn [] (get-in @atom path))
                        [path])]
     (hook/use-sync-external-store subscribe get-snapshot)
-    (Cursor. atom path)))
+    (hook/use-memo (fn [] (Cursor. atom path)) [path])))
