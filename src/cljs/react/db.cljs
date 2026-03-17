@@ -20,7 +20,19 @@
   (-swap! [_ f a b]
     (get-in (swap! atom update-in path f a b) path))
   (-swap! [_ f a b xs]
-    (get-in (swap! atom #(apply update-in % path f a b xs)) path)))
+    (get-in (swap! atom #(apply update-in % path f a b xs)) path))
+
+  IWatchable
+  (-notify-watches [_ _ _])
+  (-add-watch [cursor k f]
+    (add-watch (.-atom cursor) [::cursor k cursor]
+      (fn [_ _ old-state new-state]
+        (let [old-val (get-in old-state (.-path cursor))
+              new-val (get-in new-state (.-path cursor))]
+          (when (not= old-val new-val)
+            (f [::cursor k cursor] cursor old-val new-val))))))
+  (-remove-watch [cursor k]
+    (remove-watch (.-atom cursor) [::cursor k cursor])))
 
 (def ^:private db-context (react/createContext nil))
 

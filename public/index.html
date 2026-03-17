@@ -7,6 +7,13 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>cljs.react - Modern React for ClojureScript</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        corePlugins: { preflight: false },
+        theme: { extend: { colors: { 'koi-orange': '#f97316' } } }
+      }
+    </script>
 
     <style>
         * {
@@ -232,12 +239,6 @@
             border-radius: 0.5rem;
             font-size: 1rem;
             transition: all 0.2s ease;
-        }
-
-        input:focus, select:focus {
-            outline: none;
-            border-color: #f97316;
-            box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
         }
 
         input[type="checkbox"] {

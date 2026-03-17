@@ -5,6 +5,7 @@
             ["prismjs/components/prism-clojure"]
             [cljs.react.core :refer [Element DBProvider use-cursor]]
             [cljs.react.hook :refer [use-ref use-effect use-memo use-callback use-state]]
+            [cljs.react.form :as form]
             [clojure.string :as str])
   (:require-macros [cljs.react.core :refer [defnc]]))
 
@@ -468,6 +469,157 @@
           (DBUserDisplay))))))
 
 ;; =============================================================================
+;; Form API Demo
+;; =============================================================================
+
+(defn- validate-signup [{:keys [name email]}]
+  (cond-> {}
+    (empty? name)                       (assoc :name "Required")
+    (not (str/includes? (or email "") "@")) (assoc :email "Invalid email")))
+
+(defn- validate-profile [{:keys [username plan terms]}]
+  (cond-> {}
+    (empty? username) (assoc :username "Required")
+    (nil? plan)       (assoc :plan "Please select a plan")
+    (not terms)       (assoc :terms "Must accept terms to continue")))
+
+(defnc FormFieldInput [{:keys [value error dirty onChange onBlur label type placeholder]}]
+  (Element {:tag "div" :className "space-y-1.5"}
+    (Element {:tag "div" :className "flex items-center justify-between"}
+      (Element {:tag "label" :className "text-sm font-semibold text-gray-700"} label)
+      (when dirty
+        (Element {:tag "span"
+                  :className "text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full"}
+          "modified")))
+    (Element {:tag "input"
+              :type (or type "text")
+              :placeholder placeholder
+              :value (or value "")
+              :className (str "w-full px-4 py-2.5 rounded-lg border-2 outline-none transition-all "
+                              (if error
+                                "border-red-300 bg-red-50 ring-1 ring-red-300 focus:ring-2 focus:ring-red-300"
+                                "border-gray-200 bg-white focus:border-koi-orange focus:ring-2 focus:ring-koi-orange/20"))
+              :onChange onChange
+              :onBlur onBlur})
+    (when error
+      (Element {:tag "div" :className "flex items-center gap-1.5 text-sm text-red-600"}
+        (Element {:tag "span" :className "text-red-400"} "⚠")
+        (Element {:tag "span"} error)))))
+
+(defnc FormSubmitBtn [{:keys [f label]}]
+  (let [{:keys [submitting? submitted?]} (form/use-form-meta f)]
+    (Element {:tag "button"
+              :type "submit"
+              :disabled (or submitting? submitted?)
+              :className "w-full px-6 py-2.5 bg-koi-orange text-white rounded-lg font-semibold shadow-md hover:bg-orange-600 active:bg-orange-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all"}
+      (cond
+        submitted?  "✓ Submitted!"
+        submitting? "Submitting…"
+        :else       label))))
+
+(defnc FormCheckboxInput
+  [{:keys [checked error dirty onChange onBlur label]}]
+  (Element {:tag "div" :className "flex items-start gap-3 py-1"}
+    (Element {:tag "input"
+              :type "checkbox"
+              :checked (boolean checked)
+              :className "mt-0.5 h-4 w-4 cursor-pointer accent-orange-500"
+              :onChange onChange
+              :onBlur onBlur})
+    (Element {:tag "div" :className "flex-1"}
+      (Element {:tag "div" :className "flex items-center gap-2"}
+        (Element {:tag "span" :className "text-sm font-semibold text-gray-700"} label)
+        (when dirty
+          (Element {:tag "span"
+                    :className "text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full"}
+            "modified")))
+      (when error
+        (Element {:tag "div" :className "flex items-center gap-1 text-sm text-red-600 mt-0.5"}
+          (Element {:tag "span" :className "text-red-400"} "⚠")
+          error)))))
+
+(defnc FormRadioGroup
+  [{:keys [value error dirty onChange onBlur label options]}]
+  (Element {:tag "div" :className "space-y-2"}
+    (Element {:tag "div" :className "flex items-center justify-between"}
+      (Element {:tag "label" :className "text-sm font-semibold text-gray-700"} label)
+      (when dirty
+        (Element {:tag "span"
+                  :className "text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full"}
+          "modified")))
+    (Element {:tag "div" :className "flex flex-wrap gap-2"}
+      (for [opt options]
+        (Element {:tag "label"
+                  :key (:value opt)
+                  :className (str "flex items-center gap-2 px-4 py-2 rounded-lg border-2 cursor-pointer text-sm transition-all "
+                                  (if (= value (:value opt))
+                                    "border-koi-orange bg-orange-50 text-gray-900 font-medium"
+                                    "border-gray-200 text-gray-600 hover:border-gray-300"))}
+          (Element {:tag "input"
+                    :type "radio"
+                    :name label
+                    :value (:value opt)
+                    :checked (= value (:value opt))
+                    :className "sr-only"
+                    :onChange onChange
+                    :onBlur onBlur})
+          (:label opt))))
+    (when error
+      (Element {:tag "div" :className "flex items-center gap-1.5 text-sm text-red-600"}
+        (Element {:tag "span" :className "text-red-400"} "⚠")
+        (Element {:tag "span"} error)))))
+
+(defnc ProfileFormDemo []
+  (let [f (form/use-form
+            {:values   {:username "" :plan nil :newsletter false :terms false}
+             :validate validate-profile
+             :on-submit (fn [values]
+                          (js/Promise.
+                            (fn [resolve _]
+                              (js/setTimeout #(resolve values) 800))))})]
+    (Element {:tag "div" :className "w-full"}
+      (Element {:tag "form"
+                :className "space-y-5"
+                :onSubmit (form/on-submit f)}
+        (form/Field {:control f :name :username
+                     :render (fn [fp]
+                               (FormFieldInput (assoc fp :label "Username" :placeholder "your-username")))})
+        (form/Field {:control f :name :plan
+                     :render (fn [fp]
+                               (FormRadioGroup (assoc fp
+                                                :label "Plan"
+                                                :options [{:value "free"       :label "Free"}
+                                                          {:value "pro"        :label "Pro"}
+                                                          {:value "enterprise" :label "Enterprise"}])))})
+        (form/Field {:control f :name :newsletter :type :checkbox
+                     :render (fn [fp]
+                               (FormCheckboxInput (assoc fp :label "Subscribe to newsletter")))})
+        (form/Field {:control f :name :terms :type :checkbox
+                     :render (fn [fp]
+                               (FormCheckboxInput (assoc fp :label "I accept the terms and conditions")))})
+        (FormSubmitBtn {:f f :label "Create Account"})))))
+
+(defnc FormDemo []
+  (let [f (form/use-form
+            {:values   {:name "" :email ""}
+             :validate validate-signup
+             :on-submit (fn [values]
+                          (js/Promise.
+                            (fn [resolve _]
+                              (js/setTimeout #(resolve values) 800))))})]
+    (Element {:tag "div" :className "w-full"}
+      (Element {:tag "form"
+                :className "space-y-5"
+                :onSubmit (form/on-submit f)}
+        (form/Field {:control f :name :name
+                     :render (fn [fp]
+                               (FormFieldInput (assoc fp :label "Name" :placeholder "Your name")))})
+        (form/Field {:control f :name :email
+                     :render (fn [fp]
+                               (FormFieldInput (assoc fp :label "Email" :type "email" :placeholder "you@example.com")))})
+        (FormSubmitBtn {:f f :label "Sign Up"})))))
+
+;; =============================================================================
 ;; Main App Component
 ;; =============================================================================
 
@@ -478,7 +630,8 @@
                   {:id :state :title "State Management" :emoji "📊"}
                   {:id :effects :title "Side Effects" :emoji "⚡"}
                   {:id :advanced :title "Advanced" :emoji "🚀"}
-                  {:id :db :title "Global State" :emoji "🗄️"}]]
+                  {:id :db :title "Global State" :emoji "🗄️"}
+                  {:id :forms :title "Forms" :emoji "📝"}]]
     (Element {:tag "div"}
       ;; Header
       (Element {:tag "header"}
@@ -596,7 +749,22 @@
             (CodeAndOutput
              {:title "DBProvider & use-cursor"
               :code "(defnc CounterDisplay []\n  (let [count (use-cursor [:counter])]\n    (Element {:tag \"div\"} @count)))\n\n(defnc CounterButton []\n  (let [count (use-cursor [:counter])]\n    (Element {:tag \"button\"\n              :onClick #(swap! count inc)}\n      \"Increment\")))\n\n(defnc App []\n  (DBProvider {:initial-value {:counter 0}}\n    (CounterDisplay)\n    (CounterButton)))"}
-             (DBDemo)))))
+             (DBDemo))))
+
+        ;; Forms
+        (when (or (= selected-section :all) (= selected-section :forms))
+          (Element {:tag "section"}
+            (Element {:tag "h2"} "📝 Forms")
+
+            (CodeAndOutput
+             {:title "Form with per-field subscriptions"
+              :code "(defnc SignupForm []\n  (let [f (form/use-form\n            {:values   {:name \"\" :email \"\"}\n             :validate validate\n             :on-submit api/create-user!})]\n    (Element {:tag \"form\"\n              :onSubmit (form/on-submit f)}\n      (form/Field {:control f :name :name\n        :render (fn [fp]\n          (FieldInput (assoc fp :label \"Name\")))})\n      (form/Field {:control f :name :email\n        :render (fn [fp]\n          (FieldInput (assoc fp :label \"Email\")))})\n      (Element {:tag \"button\" :type \"submit\"}\n        \"Submit\"))))"}
+             (FormDemo))
+
+            (CodeAndOutput
+             {:title "Checkboxes & Radio Buttons"
+              :code ";; Radio — form/Field, reads e.target.value\n(form/Field {:control f :name :plan\n  :render (fn [fp]\n    (FormRadioGroup\n      (assoc fp :label \"Plan\"\n        :options [{:value \"free\"  :label \"Free\"}\n                  {:value \"pro\"   :label \"Pro\"}\n                  {:value \"ent\"   :label \"Enterprise\"}])))})\n\n;; Checkbox — form/Field with :type :checkbox\n(form/Field {:control f :name :terms :type :checkbox\n  :render (fn [fp]\n    (FormCheckboxInput\n      (assoc fp :label \"Accept terms\")))})"}
+             (ProfileFormDemo)))))
 
       ;; Footer
       (Element {:tag "footer"}

@@ -1,1 +1,1 @@
-/nix/store/smhlky40mdc63fpl5h77n75rbvnkpvh9-home-manager-files/Projects/cljs.react/shell.nix
+/nix/store/xah1b59ywyq5blngg85alhf1kgwav4a0-home-manager-files/Projects/cljs.react/shell.nix
