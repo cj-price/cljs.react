@@ -14,6 +14,7 @@
    :errors      {}
    :dirty       #{}
    :touched     #{}
+   :validating? false
    :submitting? false
    :submitted?  false})
 
@@ -56,11 +57,22 @@
                           (swap! form-atom update :touched conj field-key)
                           (when (= :blur (:validate-on @opts-ref))
                             (let [validate (:validate @opts-ref)
-                                  v (:values @form-atom)]
+                                  v        (:values @form-atom)]
                               (when validate
-                                (-> (js/Promise.resolve (validate v))
-                                    (.then (fn [errs]
-                                             (swap! form-atom assoc-in [:errors field-key] (get errs field-key)))))))))
+                                (let [result (validate v)]
+                                  (when (instance? js/Promise result)
+                                    (swap! form-atom assoc :validating? true))
+                                  (-> (js/Promise.resolve result)
+                                      (.then (fn [errs]
+                                               (swap! form-atom
+                                                      (fn [s]
+                                                        (-> s
+                                                            (assoc :validating? false)
+                                                            (assoc-in [:errors field-key]
+                                                                      (get errs field-key)))))))
+                                      (.catch (fn [err]
+                                                (swap! form-atom assoc :validating? false)
+                                                (throw err)))))))))
               handlers  #js {:onChange on-change :onBlur on-blur}]
           (gobj/set cache kname handlers)
           handlers))))
@@ -172,6 +184,7 @@
                            (add-watch form-atom key
                              (fn [_ _ old new]
                                (when (or (not= (:errors old) (:errors new))
+                                         (not= (:validating? old) (:validating? new))
                                          (not= (:submitting? old) (:submitting? new))
                                          (not= (:submitted? old) (:submitted? new)))
                                  (callback))))
@@ -180,7 +193,8 @@
         get-snapshot (hook/use-callback
                        (fn []
                          (let [s        @form-atom
-                               new-snap {:submitting? (:submitting? s)
+                               new-snap {:validating? (:validating? s)
+                                         :submitting? (:submitting? s)
                                          :submitted?  (:submitted? s)
                                          :errors      (:errors s)}
                                cached   @snap-ref]
@@ -190,56 +204,6 @@
                        [])]
     (hook/use-sync-external-store subscribe get-snapshot)))
 
-(defnc Field
-  [{:keys [control name render type]}]
-  (render (use-field control name (when type {:type type}))))
-
-;;;; Non-reactive utilities — safe to call in event handlers / submit fns
-
-(defn values
-  "Current values map."
-  [^FormHandle handle]
-  (:values @(.-form-atom handle)))
-
-(defn value
-  "Current value for a single field."
-  [^FormHandle handle field-key]
-  (get-in @(.-form-atom handle) [:values field-key]))
-
-(defn errors
-  "Current errors map."
-  [^FormHandle handle]
-  (:errors @(.-form-atom handle)))
-
-(defn error
-  "Current error string for a single field, or nil."
-  [^FormHandle handle field-key]
-  (get-in @(.-form-atom handle) [:errors field-key]))
-
-(defn set-value!
-  "Imperatively set a field value."
-  [^FormHandle handle field-key val]
-  (swap! (.-form-atom handle) assoc-in [:values field-key] val))
-
-(defn set-error!
-  "Imperatively set a field error."
-  [^FormHandle handle field-key msg]
-  (swap! (.-form-atom handle) assoc-in [:errors field-key] msg))
-
-(defn reset-form!
-  "Reset to initial state. Optionally provide new values."
-  ([^FormHandle handle]
-   (let [vals (:values @(.-opts-ref handle))
-         init (if (satisfies? IDeref vals) @vals vals)]
-     (reset! (.-form-atom handle) (make-state init))))
-  ([^FormHandle handle new-values]
-   (reset! (.-form-atom handle) (make-state new-values))))
-
-(defn form-atom
-  "Return the raw CLJS atom backing the form. Escape hatch for custom subscriptions."
-  [^FormHandle handle]
-  (.-form-atom handle))
-
 ;;;; Submit
 
 (defn- run-submit! [^FormHandle handle submit-fn]
@@ -248,9 +212,13 @@
                          (fn [s]
                            (update s :touched into (keys (:values s)))))
         v         (:values @form-atom)
-        validate  (:validate @(.-opts-ref handle))]
-    (-> (js/Promise.resolve (when validate (validate v)))
+        validate  (:validate @(.-opts-ref handle))
+        vresult   (when validate (validate v))
+        _         (when (instance? js/Promise vresult)
+                    (swap! form-atom assoc :validating? true))]
+    (-> (js/Promise.resolve vresult)
         (.then (fn [errs]
+                 (swap! form-atom assoc :validating? false)
                  (if (and errs (pos? (count errs)))
                    (swap! form-atom assoc :errors errs)
                    (do
@@ -262,7 +230,10 @@
                                          :submitted? true)))
                          (.catch (fn [err]
                                    (swap! form-atom assoc :submitting? false)
-                                   (throw err)))))))))))
+                                   (throw err))))))))
+        (.catch (fn [err]
+                  (swap! form-atom assoc :validating? false)
+                  (throw err))))))
 
 (defn on-submit
   "Returns an onSubmit event handler.

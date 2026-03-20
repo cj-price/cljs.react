@@ -6,7 +6,33 @@
    ["global-jsdom/register"]
    ["@testing-library/react" :refer [renderHook act render cleanup]]))
 
-;;; Helpers
+;;; Test helpers — FormHandle fields (form-atom, opts-ref) are public deftype fields
+
+(defn- form-state   [handle]   @(.-form-atom handle))
+(defn- form-values  [handle]   (:values (form-state handle)))
+(defn- form-errors  [handle]   (:errors (form-state handle)))
+(defn- form-error   [handle k] (get-in (form-state handle) [:errors k]))
+(defn- form-value   [handle k] (get-in (form-state handle) [:values k]))
+
+(defn- form-set-error! [handle k msg]
+  (swap! (.-form-atom handle) assoc-in [:errors k] msg))
+
+(defn- form-set-value! [handle k v]
+  (swap! (.-form-atom handle) assoc-in [:values k] v))
+
+(defn- make-form-state [values]
+  {:values values :errors {} :dirty #{} :touched #{}
+   :validating? false :submitting? false :submitted? false})
+
+(defn- form-reset!
+  ([handle]
+   (let [vals (:values @(.-opts-ref handle))
+         init (if (satisfies? IDeref vals) @vals vals)]
+     (reset! (.-form-atom handle) (make-form-state init))))
+  ([handle new-values]
+   (reset! (.-form-atom handle) (make-form-state new-values))))
+
+;;; Render helpers
 
 (defn- render-form [opts]
   (renderHook #(form/use-form opts)))
@@ -29,12 +55,12 @@
     (let [result (render-form {:values {:name "" :email ""}})
           handle (.. result -result -current)]
       (is (some? handle))
-      (is (= {:name "" :email ""} (form/values handle)))))
+      (is (= {:name "" :email ""} (form-values handle)))))
 
   (testing "initial errors are empty"
     (let [result (render-form {:values {:x 1}})
           handle (.. result -result -current)]
-      (is (= {} (form/errors handle)))))
+      (is (= {} (form-errors handle)))))
 
   (testing "handle is stable across re-renders"
     (let [result (render-form {:values {:a 1}})
@@ -83,7 +109,7 @@
           field (.. result -result -current)]
       ;; Manually set an error and touch the field
       (act #(do
-              (form/set-error! @handle-atom :name "Required")
+              (form-set-error! @handle-atom :name "Required")
               ((:onBlur field) nil)))
       (let [after (.. result -result -current)]
         (is (= "Required" (:error after))))))
@@ -107,8 +133,7 @@
                                   (form/use-field f :b)))
           b-before (.. b-result -result -current)]
       ;; Directly update :a in the form atom
-      (act #(swap! (form/form-atom @handle-holder)
-                   assoc-in [:values :a] "hello"))
+      (act #(form-set-value! @handle-holder :a "hello"))
       ;; :b subscription should not have changed
       (let [b-after (.. b-result -result -current)]
         (is (= (:value b-before) (:value b-after)))))))
@@ -145,14 +170,14 @@
                                            :validate-on :blur})]
                                   (reset! handle-atom f)
                                   (form/use-field f :a)))]
-        (-> (js/Promise.resolve (act #(form/set-error! @handle-atom :b "B is bad")))
+        (-> (js/Promise.resolve (act #(form-set-error! @handle-atom :b "B is bad")))
             (.then (fn []
-                     (is (= "B is bad" (form/error @handle-atom :b)))
+                     (is (= "B is bad" (form-error @handle-atom :b)))
                      (let [field (.. result -result -current)]
                        (-> (js/Promise.resolve (act #((:onBlur field) nil)))
                            (.then flush-microtasks)
                            (.then (fn []
-                                    (is (= "B is bad" (form/error @handle-atom :b)))
+                                    (is (= "B is bad" (form-error @handle-atom :b)))
                                     (.unmount result)
                                     (done))))))))))))
 
@@ -167,14 +192,14 @@
                                            :validate-on :blur})]
                                   (reset! handle-atom f)
                                   (form/use-field f :name)))]
-        (-> (js/Promise.resolve (act #(form/set-error! @handle-atom :name "was bad")))
+        (-> (js/Promise.resolve (act #(form-set-error! @handle-atom :name "was bad")))
             (.then (fn []
-                     (is (= "was bad" (form/error @handle-atom :name)))
+                     (is (= "was bad" (form-error @handle-atom :name)))
                      (let [field (.. result -result -current)]
                        (-> (js/Promise.resolve (act #((:onBlur field) nil)))
                            (.then flush-microtasks)
                            (.then (fn []
-                                    (is (nil? (form/error @handle-atom :name)))
+                                    (is (nil? (form-error @handle-atom :name)))
                                     (.unmount result)
                                     (done))))))))))))
 
@@ -185,6 +210,7 @@
     (let [result (renderHook #(let [f (form/use-form {:values {:x 1}})]
                                 (form/use-form-meta f)))
           meta   (.. result -result -current)]
+      (is (false? (:validating? meta)))
       (is (false? (:submitting? meta)))
       (is (false? (:submitted? meta)))
       (is (= {} (:errors meta))))))
@@ -206,7 +232,7 @@
         (-> (submit! fake-e)
             (.then (fn []
                      (is (false? @submitted))
-                     (is (= "Required" (form/error handle :name)))
+                     (is (= "Required" (form-error handle :name)))
                      (done)))))))
 
   (testing "submit with valid data calls on-submit"
@@ -224,6 +250,37 @@
             (.then (fn []
                      (is (true? @submitted))
                      (done))))))))
+
+;;; Async validating? state
+
+(deftest async-validating-test
+  (testing "validating? is true while async validator is pending, false after"
+    (async done
+      (let [deferred    (cljs.core/atom nil)
+            handle-atom (cljs.core/atom nil)
+            result      (renderHook
+                          #(let [f (form/use-form
+                                     {:values    {:x 1}
+                                      :validate  (fn [_]
+                                                   (js/Promise.
+                                                     (fn [resolve _]
+                                                       (reset! deferred resolve))))
+                                      :on-submit (fn [_] nil)})]
+                             (reset! handle-atom f)
+                             f))
+            handle      (.. result -result -current)
+            submit!     (form/on-submit handle)
+            fake-e      #js {:preventDefault (fn [])}]
+        (let [p (submit! fake-e)]
+          ;; validation promise is still pending — validating? must be true
+          (is (true? (:validating? (form-state handle))))
+          ;; resolve the deferred — no errors
+          (@deferred nil)
+          (-> p
+              (.then (fn []
+                       (is (false? (:validating? (form-state handle))))
+                       (.unmount result)
+                       (done)))))))))
 
 ;;; Validation (async)
 
@@ -243,7 +300,7 @@
         (-> (submit! fake-e)
             (.then (fn []
                      (is (false? @submitted))
-                     (is (= "Already taken" (form/error handle :user)))
+                     (is (= "Already taken" (form-error handle :user)))
                      (done))))))))
 
 ;;; Submit flow (submitting? state)
@@ -264,8 +321,8 @@
             fake-e  #js {:preventDefault (fn [])}]
         (-> (submit! fake-e)
             (.then (fn []
-                     (is (false? (:submitting? @(form/form-atom handle))))
-                     (is (true? (:submitted? @(form/form-atom handle))))
+                     (is (false? (:submitting? (form-state handle))))
+                     (is (true? (:submitted? (form-state handle))))
                      (done))))))))
 
 ;;; reset-form!
@@ -274,18 +331,18 @@
   (testing "reset-form! clears values and errors"
     (let [result (render-form {:values {:name "Alice"}})
           handle (.. result -result -current)]
-      (form/set-value! handle :name "Bob")
-      (form/set-error! handle :name "Bad")
-      (is (= "Bob" (form/value handle :name)))
-      (act #(form/reset-form! handle))
-      (is (= "Alice" (form/value handle :name)))
-      (is (= {} (form/errors handle)))))
+      (form-set-value! handle :name "Bob")
+      (form-set-error! handle :name "Bad")
+      (is (= "Bob" (form-value handle :name)))
+      (act #(form-reset! handle))
+      (is (= "Alice" (form-value handle :name)))
+      (is (= {} (form-errors handle)))))
 
   (testing "reset-form! with new values"
     (let [result (render-form {:values {:name ""}})
           handle (.. result -result -current)]
-      (act #(form/reset-form! handle {:name "Carol"}))
-      (is (= "Carol" (form/value handle :name))))))
+      (act #(form-reset! handle {:name "Carol"}))
+      (is (= "Carol" (form-value handle :name))))))
 
 ;;; Reactive defaults
 
@@ -294,11 +351,11 @@
     (let [values-atom (cljs.core/atom {:name "Alice" :email ""})
           result      (render-form {:values values-atom})
           handle      (.. result -result -current)]
-      (is (= "Alice" (form/value handle :name)))
+      (is (= "Alice" (form-value handle :name)))
       ;; Update atom - un-dirtied field should update
       (act #(reset! values-atom {:name "Bob" :email "bob@example.com"}))
       (.rerender result)
-      (is (= "Bob" (form/value handle :name)))))
+      (is (= "Bob" (form-value handle :name)))))
 
   (testing "dirty fields are not overwritten by reactive defaults"
     (let [values-atom (cljs.core/atom {:name "Alice" :email ""})
@@ -308,7 +365,7 @@
                                      f))
           handle      (.. result -result -current)]
       ;; Mark :name dirty by changing it
-      (act #(swap! (form/form-atom handle)
+      (act #(swap! (.-form-atom handle)
                    (fn [s]
                      (-> s
                          (assoc-in [:values :name] "Custom")
@@ -316,41 +373,6 @@
       ;; Update atom
       (act #(reset! values-atom {:name "Bob" :email "bob@example.com"}))
       ;; Dirty field should be preserved
-      (is (= "Custom" (form/value handle :name)))
+      (is (= "Custom" (form-value handle :name)))
       ;; Un-dirtied field should update
-      (is (= "bob@example.com" (form/value handle :email))))))
-
-;;; Field component
-
-(deftest field-component-test
-  (testing "Field calls :render with field props including :dirty"
-    (let [captured (cljs.core/atom nil)]
-      (render
-        (react/createElement
-          (fn []
-            (let [f (form/use-form {:values {:name "Alice"}})]
-              (form/Field {:control f
-                           :name    :name
-                           :render  (fn [fp]
-                                      (reset! captured fp)
-                                      nil)})))))
-      (is (= "Alice" (:value @captured)))
-      (is (false? (:dirty @captured)))
-      (is (fn? (:onChange @captured)))
-      (is (fn? (:onBlur @captured)))))
-
-  (testing "Field with :type :checkbox returns :checked key"
-    (let [captured (cljs.core/atom nil)]
-      (render
-        (react/createElement
-          (fn []
-            (let [f (form/use-form {:values {:terms false}})]
-              (form/Field {:control f
-                           :name    :terms
-                           :type    :checkbox
-                           :render  (fn [fp]
-                                      (reset! captured fp)
-                                      nil)})))))
-      (is (false? (:checked @captured)))
-      (is (nil? (:value @captured)))
-      (is (fn? (:onChange @captured))))))
+      (is (= "bob@example.com" (form-value handle :email))))))
