@@ -7,7 +7,8 @@
             [cljs.react.demo.effects :refer [EffectsTab]]
             [cljs.react.demo.advanced :refer [AdvancedTab]]
             [cljs.react.demo.db :refer [DBTab]]
-            [cljs.react.demo.forms :refer [FormsTab]])
+            [cljs.react.demo.forms :refer [FormsTab]]
+            [cljs.react.demo.mui :refer [MUITab]])
   (:require-macros [cljs.react.core :refer [defnc]]))
 
 (defnc App
@@ -18,7 +19,8 @@
                   {:id :effects :title "Side Effects" :emoji "⚡"}
                   {:id :advanced :title "Advanced" :emoji "🚀"}
                   {:id :db :title "Global State" :emoji "🗄️"}
-                  {:id :forms :title "Forms" :emoji "📝"}]]
+                  {:id :forms :title "Forms" :emoji "📝"}
+                  {:id :mui :title "MUI" :emoji "🎨"}]]
     (Element {:tag "div"}
       ;; Header
       (Element {:tag "header"}
@@ -46,7 +48,8 @@
         (when (= selected-section :effects)  (EffectsTab))
         (when (= selected-section :advanced) (AdvancedTab))
         (when (= selected-section :db)       (DBTab))
-        (when (= selected-section :forms)    (FormsTab)))
+        (when (= selected-section :forms)    (FormsTab))
+        (when (= selected-section :mui)      (MUITab)))
 
       ;; Footer
       (Element {:tag "footer"}
