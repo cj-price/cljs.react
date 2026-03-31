@@ -1,6 +1,4 @@
-{:source-paths ["src" "dev" "test"]
-
- :dependencies []
+{:deps {:aliases [:dev :test]}
 
  :builds
  {:library

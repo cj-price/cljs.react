@@ -1,0 +1,5 @@
+{:deps {org.clojure/clojurescript {:mvn/version "1.11.132"}
+        thheller/shadow-cljs {:mvn/version "2.28.20"}}
+ :paths ["src"]
+ :aliases {:test {:extra-paths ["test"]}
+           :dev {:extra-paths ["dev"]}}}
