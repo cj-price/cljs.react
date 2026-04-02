@@ -1,7 +1,6 @@
 (ns cljs.react.core
   (:require
    ["react" :as react]
-   ["react-dom" :as react-dom]
    [cljs.react.component :as component]
    [cljs.react.hook :as hook]
    [cljs.react.db :as db]))
@@ -56,11 +55,6 @@
 
 (def Fragment react/Fragment)
 (def Suspense react/Suspense)
-
-(defn create-portal
-  "Render children into a different DOM node."
-  [child container]
-  (react-dom/createPortal child container))
 
 ;; Re-export db utilities
 (def DBProvider db/DBProvider)
