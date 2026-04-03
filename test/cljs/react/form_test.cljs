@@ -8,16 +8,16 @@
 
 ;;; Test helpers — FormHandle fields (form-atom, opts-ref) are public deftype fields
 
-(defn- form-state   [handle]   @(.-form-atom handle))
-(defn- form-values  [handle]   (:values (form-state handle)))
-(defn- form-errors  [handle]   (:errors (form-state handle)))
-(defn- form-error   [handle k] (get-in (form-state handle) [:errors k]))
-(defn- form-value   [handle k] (get-in (form-state handle) [:values k]))
+(defn- form-state   [^form/FormHandle handle]   @(.-form-atom handle))
+(defn- form-values  [^form/FormHandle handle]   (:values (form-state handle)))
+(defn- form-errors  [^form/FormHandle handle]   (:errors (form-state handle)))
+(defn- form-error   [^form/FormHandle handle k] (get-in (form-state handle) [:errors k]))
+(defn- form-value   [^form/FormHandle handle k] (get-in (form-state handle) [:values k]))
 
-(defn- form-set-error! [handle k msg]
+(defn- form-set-error! [^form/FormHandle handle k msg]
   (swap! (.-form-atom handle) assoc-in [:errors k] msg))
 
-(defn- form-set-value! [handle k v]
+(defn- form-set-value! [^form/FormHandle handle k v]
   (swap! (.-form-atom handle) assoc-in [:values k] v))
 
 (defn- make-form-state [values]
@@ -25,11 +25,11 @@
    :validating? false :submitting? false :submitted? false})
 
 (defn- form-reset!
-  ([handle]
+  ([^form/FormHandle handle]
    (let [vals (:values @(.-opts-ref handle))
          init (if (satisfies? IDeref vals) @vals vals)]
      (reset! (.-form-atom handle) (make-form-state init))))
-  ([handle new-values]
+  ([^form/FormHandle handle new-values]
    (reset! (.-form-atom handle) (make-form-state new-values))))
 
 ;;; Render helpers

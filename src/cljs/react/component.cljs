@@ -36,6 +36,19 @@
         #js {}
         props))))
 
+(defn- make-react-props
+  "Build the JS props object for a React createElement call.
+  For DOM elements (strings): converts the CLJS map to a JS object.
+  For components: wraps in {:cljsProps props}, hoisting :key to the top level
+  so React's reconciler can see it."
+  [type props]
+  (if (string? type)
+    (clj->js-props props)
+    (let [js-obj #js {:cljsProps props}]
+      (when-let [k (:key props)]
+        (aset js-obj "key" k))
+      js-obj)))
+
 (defn create-cljs-element
   "Create a React element that works with ClojureScript data structures.
 
@@ -53,13 +66,7 @@
   Returns:
     React element"
   [type props & children]
-  (let [;; For DOM elements, convert to JS
-        ;; For components, wrap CLJS props in JS object
-        react-props (if (string? type)
-                      (clj->js-props props)
-                      #js {:cljsProps props})
-        js-children (to-array children)]
-    (apply *create-element* type react-props js-children)))
+  (apply *create-element* type (make-react-props type props) (to-array children)))
 
 (defn memo-component
   "Wrap component with React.memo using ClojureScript equality.
@@ -145,11 +152,7 @@
   the provided renderer instead of react/createElement."
   [renderer]
   (fn [type props & children]
-    (let [react-props (if (string? type)
-                        (clj->js-props props)
-                        #js {:cljsProps props})
-          js-children (to-array children)]
-      (apply renderer type react-props js-children))))
+    (apply renderer type (make-react-props type props) (to-array children))))
 
 (defn forward-ref
   "Wrap a CLJS component fn with React.forwardRef.
