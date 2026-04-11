@@ -4,6 +4,7 @@ pkgs.mkShell {
   buildInputs = with pkgs; [
     # JavaScript tooling
     nodejs_22
+    pnpm
 
     # Clojure tooling
     clojure
@@ -13,7 +14,7 @@ pkgs.mkShell {
     jdk17
 
     # Optional: shadow-cljs for build tooling
-    # You can install this via npm instead if preferred
+    # You can install this via pnpm instead if preferred
   ];
 
   shellHook = ''

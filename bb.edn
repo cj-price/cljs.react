@@ -3,26 +3,30 @@
 
   dev
   {:doc "Watch and compile demo"
-   :task (p/shell "npx shadow-cljs watch demo")}
+   :task (p/shell "pnpm exec shadow-cljs watch demo")}
 
   test
   {:doc "Run tests"
    :task (do
-           (p/shell "npx shadow-cljs compile test")
+           (p/shell "pnpm exec shadow-cljs compile test")
            (p/shell "node target/test.js"))}
+
+  build
+  {:doc "Build library"
+   :task (p/shell "pnpm exec shadow-cljs release library")}
 
   bench
   {:doc "Run performance benchmarks"
    :task (do
-           (p/shell "npx shadow-cljs compile benchmark")
+           (p/shell "pnpm exec shadow-cljs compile benchmark")
            (p/shell "node target/benchmark.js"))}
 
   bench-watch
   {:doc "Watch and re-run benchmarks on changes"
-   :task (p/shell "npx shadow-cljs watch benchmark")}
+   :task (p/shell "pnpm exec shadow-cljs watch benchmark")}
 
   bench-baseline
   {:doc "Run benchmarks and save as new baseline"
    :task (do
-           (p/shell "npx shadow-cljs compile benchmark")
+           (p/shell "pnpm exec shadow-cljs compile benchmark")
            (p/shell "node target/benchmark.js --save-baseline"))}}}

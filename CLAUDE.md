@@ -40,7 +40,7 @@ Always run commands inside `nix-shell --run '...'` — enforced by global CLAUDE
 ```bash
 nix-shell --run 'bb dev'             # Start dev server → http://localhost:9011
 nix-shell --run 'bb test'            # Run tests
-nix-shell --run 'npm run build'      # Build library → dist/cljs-react.js
+nix-shell --run 'bb build'            # Build library → dist/cljs-react.js
 nix-shell --run 'bb bench'           # Run benchmarks
 nix-shell --run 'bb bench-baseline'  # Save baseline
 ```
