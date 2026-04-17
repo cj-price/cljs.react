@@ -6,7 +6,7 @@
 
 (defnc CodeAndOutput
   [{:keys [code title children]}]
-  (Element {:tag "div"}
+  (Element {:tag "div" :className "code-and-output"}
     (when title
       (Element {:tag "h4"} title))
     (Element {:tag "div" :className "demo-columns"}

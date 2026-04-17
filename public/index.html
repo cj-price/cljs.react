@@ -90,7 +90,7 @@
             justify-content: center;
         }
 
-        button {
+        button:not([class*="Mui"]) {
             padding: 0.625rem 1.25rem;
             border-radius: 0.5rem;
             font-weight: 500;
@@ -102,19 +102,19 @@
             transition: all 0.2s ease;
         }
 
-        button:hover:not(:disabled) {
+        button:not([class*="Mui"]):hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 10px 15px -3px rgba(249, 115, 22, 0.2);
         }
 
-        button.active {
+        button.active:not([class*="Mui"]) {
             background: #f97316;
             color: white;
             border-color: #f97316;
             box-shadow: 0 4px 6px -1px rgba(249, 115, 22, 0.3);
         }
 
-        button:disabled {
+        button:not([class*="Mui"]):disabled {
             opacity: 0.5;
             cursor: not-allowed;
         }
@@ -167,6 +167,10 @@
             background: #f97316;
             border-radius: 50%;
             margin-right: 0.5rem;
+        }
+
+        .code-and-output + .code-and-output {
+            margin-top: 2rem;
         }
 
         .demo-columns {
@@ -230,9 +234,9 @@
         }
 
         /* Input styling */
-        input[type="text"],
-        input[type="email"],
-        select {
+        input[type="text"]:not([class*="Mui"]),
+        input[type="email"]:not([class*="Mui"]),
+        select:not([class*="Mui"]) {
             width: 100%;
             padding: 0.75rem 1rem;
             border: 2px solid #e5e7eb;
@@ -241,7 +245,7 @@
             transition: all 0.2s ease;
         }
 
-        input[type="checkbox"] {
+        input[type="checkbox"]:not([class*="Mui"]) {
             width: 1.25rem;
             height: 1.25rem;
             border-radius: 0.25rem;
