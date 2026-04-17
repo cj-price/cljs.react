@@ -370,6 +370,86 @@
                        (is (true? (:submitted? s))))
                      (done))))))))
 
+(deftest submit-validator-rejection-test
+  (testing "validator promise rejection during submit clears submitting?/validating? and sets submit-error"
+    (async done
+      (let [err    (js/Error. "validator blew up")
+            result (renderHook
+                     #(form/use-form
+                        {:values    {:x 1}
+                         :validate  (fn [_]
+                                      (js/Promise. (fn [_ reject] (reject err))))
+                         :on-submit (fn [_] nil)}))
+            handle  (.. result -result -current)
+            submit! (form/on-submit handle)
+            fake-e  #js {:preventDefault (fn [])}]
+        (-> (submit! fake-e)
+            (.then (fn []
+                     (let [s (form-state handle)]
+                       (is (false? (:submitting? s)))
+                       (is (false? (:validating? s)))
+                       (is (identical? err (:submit-error s)))
+                       (done)))))))))
+
+(deftest on-submit-2arity-test
+  (testing "on-submit 2-arity override calls the provided submit fn, ignoring opts :on-submit"
+    (async done
+      (let [opts-calls     (cljs.core/atom 0)
+            override-calls (cljs.core/atom 0)
+            result (renderHook
+                     #(form/use-form
+                        {:values    {:x 1}
+                         :on-submit (fn [_] (swap! opts-calls inc))}))
+            handle (.. result -result -current)
+            submit-override (form/on-submit handle
+                                            (fn [_] (swap! override-calls inc)))
+            fake-e #js {:preventDefault (fn [])}]
+        (-> (submit-override fake-e)
+            (.then (fn []
+                     (is (= 0 @opts-calls))
+                     (is (= 1 @override-calls))
+                     (done))))))))
+
+(deftest use-form-validator-only-test
+  (testing "use-form with only :validate (no :on-submit) completes a clean submit"
+    (async done
+      (let [result (renderHook
+                     #(form/use-form
+                        {:values   {:x 1}
+                         :validate (fn [_] nil)}))
+            handle (.. result -result -current)
+            submit! (form/on-submit handle)
+            fake-e  #js {:preventDefault (fn [])}]
+        (-> (submit! fake-e)
+            (.then (fn []
+                     (let [s (form-state handle)]
+                       (is (false? (:submitting? s)))
+                       (is (true?  (:submitted? s)))
+                       (is (nil?   (:submit-error s))))
+                     (done))))))))
+
+(deftest blur-validator-rejection-test
+  (testing "blur validator promise rejection clears validating? (does not leak state)"
+    (async done
+      (let [handle-atom (cljs.core/atom nil)
+            result (renderHook
+                     #(let [f (form/use-form
+                                {:values      {:name ""}
+                                 :validate    (fn [_]
+                                                (js/Promise. (fn [_ reject]
+                                                               (reject (js/Error. "nope")))))
+                                 :validate-on :blur})]
+                        (reset! handle-atom f)
+                        (form/use-field f :name)))]
+        (let [field (.. result -result -current)]
+          (-> (js/Promise.resolve
+                (act #(try ((:onBlur field) nil) (catch :default _ nil))))
+              (.then flush-microtasks)
+              (.then (fn []
+                       (is (false? (:validating? (form-state @handle-atom))))
+                       (.unmount result)
+                       (done)))))))))
+
 (deftest submit-clears-prior-error-test
   (testing ":submit-error is cleared at the start of a new submit"
     (async done

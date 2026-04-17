@@ -101,3 +101,10 @@
           atom (.. result -result -current)]
       (is (satisfies? IDeref atom))
       (is (= {:test true} @atom)))))
+
+(deftest cursor-notify-watches-throws-test
+  (testing "-notify-watches on a Cursor throws — callers should use swap!/reset!"
+    (let [a (atom {:x 1})
+          c (db/->Cursor a [:x])]
+      (is (thrown-with-msg? js/Error #"does not support -notify-watches"
+            (-notify-watches c nil nil))))))

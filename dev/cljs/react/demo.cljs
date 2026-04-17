@@ -1,7 +1,7 @@
 (ns cljs.react.demo
   (:require ["react" :as react]
-            ["react-dom/client" :as react-dom]
             [cljs.react.core :refer [Element]]
+            [cljs.react.dom :as dom]
             [cljs.react.demo.basics :refer [BasicsTab]]
             [cljs.react.demo.state :refer [StateTab]]
             [cljs.react.demo.effects :refer [EffectsTab]]
@@ -80,11 +80,11 @@
 
 (defn ^:dev/after-load reload []
   (when @root
-    (.render @root (App {}))))
+    (dom/render @root (App {}))))
 
 (defn ^:export init
   "Initialize the React application using React 18+ createRoot API"
   []
   (when-let [root-el (.getElementById js/document "app")]
-    (reset! root (react-dom/createRoot root-el))
-    (.render @root (App {}))))
+    (reset! root (dom/create-root root-el))
+    (dom/render @root (App {}))))

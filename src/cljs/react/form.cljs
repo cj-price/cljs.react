@@ -1,8 +1,13 @@
 (ns cljs.react.form
+  "Form state with per-field subscriptions: `use-form` owns the atom, each
+  `use-field` subscribes only to its own slice, and submit flow handles sync
+  + async validators, concurrent submits, and rejection safely.
+
+  Re-exported from `cljs.react.core`; prefer that namespace in consumer code."
   (:require
    [cljs.react.hook :as hook]))
 
-(deftype FormHandle [form-atom opts-ref handler-cache])
+(deftype ^:no-doc FormHandle [form-atom opts-ref handler-cache])
 
 
 (defn form-atom
@@ -82,9 +87,12 @@
                                                       (assoc :validating? false)
                                                       (assoc-in [:errors field-key]
                                                                 (get errs field-key)))))))
-                                (.catch (fn [err]
-                                          (swap! form-atom assoc :validating? false)
-                                          (throw err)))))))))]
+                                (.catch (fn [_err]
+                                          ;; Blur validation is fire-and-forget;
+                                          ;; a rejected validator just clears the
+                                          ;; in-flight flag without leaking an
+                                          ;; unhandled rejection to the runtime.
+                                          (swap! form-atom assoc :validating? false)))))))))]
     #js {:onChange on-change :onBlur on-blur}))
 
 (defn- ensure-handlers!

@@ -1,0 +1,186 @@
+# cljs.react
+
+Idiomatic ClojureScript bindings for React 19. Element DSL, `defnc` function
+components, hooks that return CLJS atoms, a `Cursor`-based global store, and a
+per-field form module — all built so persistent data structures flow through
+React without constant `clj->js` / `js->clj` churn.
+
+**Status:** v0.x, pre-release. Small breaking changes may land at minor
+versions until v1.0. Anything under `cljs.react.{component,hook,db,form,error-boundary}`
+is implementation detail — require `cljs.react.core` and `cljs.react.dom` from
+application code.
+
+## Install
+
+Git dependency in `deps.edn`:
+
+```clojure
+{:deps
+ {io.github.cj-price/cljs.react
+  {:git/url "https://github.com/cj-price/cljs.react.git"
+   :git/sha "<latest commit sha>"}}}
+```
+
+Add React as a peer dep in `package.json` (pnpm, npm, or yarn):
+
+```json
+{
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
+```
+
+## Quickstart
+
+```clojure
+(ns app.main
+  (:require [cljs.react.core :refer [defnc Element use-state]]
+            [cljs.react.dom :as dom]))
+
+(defnc Counter [{:keys [initial]}]
+  (let [n (use-state initial)]
+    (Element {:tag "div"}
+      (Element {:tag "p"} "Count: " @n)
+      (Element {:tag "button" :onClick #(swap! n inc)} "+1"))))
+
+(defonce root (dom/create-root (js/document.getElementById "app")))
+
+(defn init []
+  (dom/render root (Counter {:initial 0})))
+```
+
+- `defnc` defines a memoized function component (CLJS props → JS under the hood).
+- `Element` creates a React element from a map with a `:tag` key.
+- `use-state` returns a `StateAtom` — `deref` / `reset!` / `swap!` all work natively.
+
+## API map
+
+Everything below is re-exported from `cljs.react.core` unless otherwise noted.
+
+### Element DSL
+
+| Symbol | Purpose |
+| --- | --- |
+| `Element` | Create a React element from `{:tag ... :key ... ...}` + children |
+| `Fragment` | `React.Fragment` element type |
+| `Suspense` | `React.Suspense` element type |
+| `ErrorBoundary` | Catch render-phase errors and render a `:fallback` |
+| `create-context` | Build a React context with an optional default value |
+| `make-element-fn` | Build an Element-like function bound to a custom renderer |
+| `make-create-cljs-element-fn` | Same, for the `create-cljs-element` shape |
+
+### Hooks
+
+| Symbol | Purpose |
+| --- | --- |
+| `use-state` | Local state → `StateAtom` (deref / reset! / swap!) |
+| `use-ref` | Mutable ref → `RefAtom` (deref / reset! / swap!) |
+| `react-ref` | Extract the raw JS ref from a `RefAtom` for DOM/JS interop |
+| `use-effect` | `React.useEffect` with CLJS-equality deps |
+| `use-layout-effect` | `React.useLayoutEffect` with CLJS-equality deps |
+| `use-memo` | `React.useMemo` with CLJS-equality deps |
+| `use-callback` | `React.useCallback` with CLJS-equality deps |
+| `use-context` | Read the current value of a React context |
+| `use-id` | `React.useId` — stable id for a11y |
+| `use-imperative-handle` | Expose an imperative handle via forwardRef |
+| `use-sync-external-store` | `React.useSyncExternalStore` |
+| `use-transition` | `[is-pending start-transition]` for non-urgent updates |
+| `use-deferred-value` | `React.useDeferredValue` |
+| `use-atom` | Subscribe to a CLJS atom (equal swaps are no-ops) |
+
+### Components
+
+| Symbol | Purpose |
+| --- | --- |
+| `defnc` (macro) | Define a memoized function component |
+| `forward-ref` | Wrap a CLJS component fn with `React.forwardRef` |
+
+### Global state (db / Cursor)
+
+| Symbol | Purpose |
+| --- | --- |
+| `DBProvider` | Install an atom at the root of the tree |
+| `use-db` | Subscribe to the whole db atom |
+| `use-db-atom` | Return the raw db atom (no subscription) |
+| `use-cursor` | Subscribe to a path; returns a Cursor (deref / reset! / swap!) |
+
+### Forms
+
+| Symbol | Purpose |
+| --- | --- |
+| `use-form` | Create a `FormHandle` from `{:values :validate :on-submit :validate-on}` |
+| `use-field` | Subscribe to a single field's slice; returns handlers + value/error |
+| `use-form-meta` | Subscribe to `{:validating? :submitting? :submitted? :errors :submit-error}` |
+| `on-submit` | Build the `onSubmit` event handler for a `FormHandle` |
+
+### DOM mount (cljs.react.dom)
+
+| Symbol | Purpose |
+| --- | --- |
+| `create-root` | Wrap `ReactDOM.createRoot(container)` |
+| `hydrate-root` | Wrap `ReactDOM.hydrateRoot(container, element)` |
+| `render` | `(.render root element)` |
+| `unmount` | `(.unmount root)` |
+| `create-portal` | `ReactDOM.createPortal(children, container)` |
+
+## Conventions
+
+- **CamelCase** — React element/component constructors: `Element`, `Fragment`,
+  `Suspense`, `DBProvider`, `ErrorBoundary`, `defnc`-defined components.
+- **kebab-case** — everything else: hooks, utilities, handler builders
+  (`use-state`, `use-cursor`, `on-submit`, `clj->js-props`, `forward-ref`).
+
+Rule of thumb: if a symbol returns a React element or is intended to sit in
+element-creation position, it is CamelCase. Otherwise it is kebab-case.
+
+### `ErrorBoundary` and `role="alert"`
+
+`ErrorBoundary`'s `:fallback` is arbitrary markup. Give the root of your
+fallback `:role "alert"` so screen readers announce the error when it
+appears:
+
+```clojure
+(ErrorBoundary
+  {:fallback (fn [err]
+               (Element {:tag "div" :role "alert"}
+                 "Something went wrong: " (ex-message err)))}
+  (RiskyChild))
+```
+
+### `:key` on function components
+
+React's reconciler reads `key` off the element's JS props, not the `cljsProps`
+wrapper that `defnc` components use. `Element` hoists `:key` automatically, but
+if you call a `defnc` component directly (`(MyItem {:key id})`), the key is
+invisible to React. For keyed lists use `Element` at the call site:
+
+```clojure
+(for [item items]
+  (Element {:tag MyItem :key (:id item) :item item}))
+```
+
+## Development
+
+Uses `nix-shell` (Node 22, Clojure, Babashka, JDK 17) and `bb` tasks:
+
+```bash
+nix-shell --run 'bb dev'    # watch + compile demo → http://localhost:9011
+nix-shell --run 'bb test'   # compile and run test suite
+nix-shell --run 'bb bench'  # run performance benchmarks
+```
+
+Test suite uses `cljs.test` + `@testing-library/react` + `global-jsdom`; the
+`:test` build runs under Node.
+
+The `:release-demo` shadow-cljs build target compiles the demo under
+`:optimizations :advanced` as a smoke test for externs / dead-code issues:
+
+```bash
+nix-shell --run 'npx shadow-cljs release release-demo'
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

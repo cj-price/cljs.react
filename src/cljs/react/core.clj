@@ -40,7 +40,7 @@
                                  " — expected :as-element, :forward-ref, or no option")
                             {:component name :option options})))
         [arg-vec & body] args
-        inner-name (symbol (str name "-inner"))
+        display-name (str name)
         props-sym (if (empty? arg-vec) '_ (first arg-vec))
         ;; Pick the memo wrapper + element constructor per option.
         ;; :as-element uses raw JS props (react/createElement + clj->js-props),
@@ -63,13 +63,15 @@
                       ([memoized# props#] (cljs.react.component/create-cljs-element memoized# props#))
                       ([memoized# props# & children#]
                        (apply cljs.react.component/create-cljs-element memoized# props# children#))))]
-    `(do
-       (defn ^:private ~inner-name [~props-sym]
-         ~@body)
-       (def ~name
-         (let [memoized# (~memo-wrapper ~inner-name)
-               build# ~build-fn]
-           (fn
-             ([] (build# memoized#))
-             ([props#] (build# memoized# props#))
-             ([props# & children#] (apply build# memoized# props# children#))))))))
+    `(def ~name
+       (let [inner#    (fn [~props-sym] ~@body)
+             _#        (set! (.-displayName inner#) ~display-name)
+             memoized# (~memo-wrapper inner#)
+             _#        (set! (.-displayName memoized#) ~display-name)
+             build#    ~build-fn
+             wrapper#  (fn
+                         ([] (build# memoized#))
+                         ([props#] (build# memoized# props#))
+                         ([props# & children#] (apply build# memoized# props# children#)))]
+         (set! (.-displayName wrapper#) ~display-name)
+         wrapper#))))

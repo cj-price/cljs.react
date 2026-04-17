@@ -1,9 +1,14 @@
 (ns cljs.react.db
+  "Global state via a single Clojure atom held in React context. `DBProvider`
+  installs the atom; `use-db`/`use-db-atom`/`use-cursor` subscribe to all or
+  part of it with per-path fan-out.
+
+  Re-exported from `cljs.react.core`; prefer that namespace in consumer code."
   (:require
    ["react" :as react]
    [cljs.react.hook :as hook]))
 
-(deftype Cursor [atom path]
+(deftype ^:no-doc Cursor [atom path]
   IDeref
   (-deref [_] (get-in @atom path))
 
@@ -47,7 +52,10 @@
       @new-val))
 
   IWatchable
-  (-notify-watches [_ _ _])
+  (-notify-watches [_ _ _]
+    (throw (ex-info
+             "Cursor does not support -notify-watches directly; use swap!/reset! which propagate through the underlying atom's watches."
+             {})))
   (-add-watch [cursor k f]
     (add-watch (.-atom cursor) [::cursor k cursor]
       (fn [_ _ old-state new-state]

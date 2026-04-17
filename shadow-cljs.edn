@@ -19,4 +19,12 @@
    :main cljs.benchmark.core/-main
    :output-to "target/benchmark.js"
    :compiler-options {:optimizations :simple
-                      :source-map false}}}}
+                      :source-map false}}
+
+  :release-demo
+  {:target :browser
+   :output-dir "target/release-demo/js"
+   :asset-path "/js"
+   :modules {:main {:init-fn cljs.react.demo/init}}
+   :compiler-options {:optimizations :advanced
+                      :infer-externs :auto}}}}

@@ -39,7 +39,14 @@
           state (.. result -result -current)]
       (act #(swap! state assoc :c 3 :d 4))
       (let [new-state (.. result -result -current)]
-        (is (= {:a 1 :b 2 :c 3 :d 4} @new-state))))))
+        (is (= {:a 1 :b 2 :c 3 :d 4} @new-state)))))
+
+  (testing "reset! returns the new value (matches clojure.core/reset! contract)"
+    (let [result (renderHook #(hook/->StateAtom (react/useState 0)))
+          state  (.. result -result -current)
+          ret    (atom nil)]
+      (act #(reset! ret (reset! state 42)))
+      (is (= 42 @ret)))))
 
 (deftest cljs-deps-test
   (testing "same deps keep counter stable"
@@ -299,6 +306,40 @@
       (render (react/createElement parent-component))
       (is (= "focused" (.focus (.-current parent-ref))))
       (is (= 42 (.getValue (.-current parent-ref)))))))
+
+(deftest use-atom-test
+  (testing "returns current atom value on mount"
+    (let [a      (cljs.core/atom {:count 0})
+          result (renderHook #(hook/use-atom a))]
+      (is (= {:count 0} (.. result -result -current)))))
+
+  (testing "re-renders when atom changes to a different value"
+    (let [a      (cljs.core/atom 1)
+          result (renderHook #(hook/use-atom a))]
+      (is (= 1 (.. result -result -current)))
+      (act #(reset! a 2))
+      (is (= 2 (.. result -result -current)))))
+
+  (testing "swap! that produces a =-equal value does not create a new render"
+    (let [a            (cljs.core/atom {:k "v"})
+          render-count (cljs.core/atom 0)
+          result       (renderHook #(do (swap! render-count inc)
+                                        (hook/use-atom a)))]
+      (is (= 1 @render-count))
+      ;; swap to a structurally equal but non-identical map
+      (act #(reset! a {:k "v"}))
+      ;; snapshot cache should prevent a re-render
+      (is (= 1 @render-count))
+      ;; a real change does re-render
+      (act #(reset! a {:k "w"}))
+      (is (= 2 @render-count))))
+
+  (testing "cleans up the watch on unmount"
+    (let [a      (cljs.core/atom 0)
+          result (renderHook #(hook/use-atom a))]
+      (is (pos? (count (.-watches a))))
+      (.unmount result)
+      (is (zero? (count (.-watches a)))))))
 
 (deftest forward-ref-component-test
   (testing "forward-ref component receives ref in props"

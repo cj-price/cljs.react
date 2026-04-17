@@ -1,4 +1,12 @@
 (ns cljs.react.component
+  "Component-authoring primitives: CLJS-props interop (`create-cljs-element`,
+  `clj->js-props`), memoization wrappers (`memo-component`,
+  `memo-component-js`, `memo-forward-ref`), `forward-ref`, and the
+  `*create-element*` dynamic var for custom renderers.
+
+  The `defnc` macro in `cljs.react.core` composes these for typical components;
+  use this ns directly when defnc isn't a fit (custom renderer, manual
+  memoization, etc.)."
   (:require ["react" :as react]
             [goog.object :as gobj]
             [cljs.react.hook :as hook]))
@@ -102,6 +110,14 @@
        (identical? (gobj/get prev-js-props "children")
                    (gobj/get next-js-props "children"))))
 
+(defn- propagate-display-name!
+  "Copy displayName from `src` onto `dst` when present. React DevTools reads
+  this for the node label; without it wrapped components render as Anonymous."
+  [src dst]
+  (when-let [n (.-displayName src)]
+    (set! (.-displayName dst) n))
+  dst)
+
 (defn memo-component
   "Wrap component with React.memo using ClojureScript equality.
 
@@ -115,8 +131,10 @@
   Returns:
     Memoized React component"
   [component-fn]
-  (react/memo (fn [js-props] (component-fn (unwrap-cljs-props js-props)))
-              cljs-props-equal?))
+  (propagate-display-name!
+    component-fn
+    (react/memo (fn [js-props] (component-fn (unwrap-cljs-props js-props)))
+                cljs-props-equal?)))
 
 (defn memo-component-js
   "Wrap component with React.memo for components that accept raw JS props.
@@ -134,7 +152,7 @@
     Memoized React component that accepts JS props"
   [component-fn]
   ;; Just use React.memo with default comparison (shallow equality)
-  (react/memo component-fn))
+  (propagate-display-name! component-fn (react/memo component-fn)))
 
 ;; Custom renderer support
 
@@ -172,12 +190,16 @@
   "Wrap a CLJS component fn with React.forwardRef.
   The forwarded ref is wrapped in a RefAtom and injected as :ref in the props map."
   [component-fn]
-  (react/forwardRef
-    (fn [js-props ref]
-      (component-fn
-        (assoc (unwrap-cljs-props js-props) :ref (hook/->RefAtom ref))))))
+  (propagate-display-name!
+    component-fn
+    (react/forwardRef
+      (fn [js-props ref]
+        (component-fn
+          (assoc (unwrap-cljs-props js-props) :ref (hook/->RefAtom ref)))))))
 
 (defn memo-forward-ref
   "Combine forward-ref + React.memo with CLJS equality comparison."
   [component-fn]
-  (react/memo (forward-ref component-fn) cljs-props-equal?))
+  (propagate-display-name!
+    component-fn
+    (react/memo (forward-ref component-fn) cljs-props-equal?)))

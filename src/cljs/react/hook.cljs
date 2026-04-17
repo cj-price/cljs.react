@@ -1,13 +1,19 @@
 (ns cljs.react.hook
+  "ClojureScript-idiomatic wrappers over React hooks. Returns CLJS-friendly
+  types (StateAtom, RefAtom, Cursor-compatible selectors) so consumers can
+  use `deref`, `reset!`, `swap!` directly instead of React's tuple/ref shapes.
+
+  Most symbols are re-exported from `cljs.react.core`; prefer that namespace
+  unless you need something not re-exported (e.g. [[use-selector]])."
   (:require
    ["react" :as react]))
 
-(deftype StateAtom [arr]
+(deftype ^:no-doc StateAtom [arr]
   IDeref
   (-deref [_] (aget arr 0))
 
   IReset
-  (-reset! [_ v] ((aget arr 1) v))
+  (-reset! [_ v] ((aget arr 1) v) v)
 
   ISwap
   (-swap! [_ f] ((aget arr 1) f))
@@ -15,7 +21,7 @@
   (-swap! [_ f a b] ((aget arr 1) #(f % a b)))
   (-swap! [_ f a b xs] ((aget arr 1) #(apply f % a b xs))))
 
-(defn cljs-deps
+(defn ^:no-doc cljs-deps
   "Compare ClojureScript deps using structural equality.
   Returns a JS array whose element[0] is a counter that bumps only when deps change.
   Allocates a fresh JS array only when deps change — stable renders reuse the cached array,
@@ -54,10 +60,10 @@
   ([effect-fn deps]
    (react/useLayoutEffect effect-fn (cljs-deps deps))))
 
-(defprotocol IReactRef
+(defprotocol ^:no-doc IReactRef
   (-react-ref [this]))
 
-(deftype RefAtom [ref]
+(deftype ^:no-doc RefAtom [ref]
   IDeref
   (-deref [_] (.-current ref))
   IReset
@@ -112,18 +118,6 @@
 
 (def use-deferred-value react/useDeferredValue)
 
-(defn use-atom
-  "Subscribe to a ClojureScript atom. Returns the current value and re-renders on changes."
-  [atom]
-  (let [subscribe    (use-callback
-                       (fn [callback]
-                         (let [key (gensym "use-atom")]
-                           (add-watch atom key (fn [_ _ _ _] (callback)))
-                           #(remove-watch atom key)))
-                       [atom])
-        get-snapshot (use-callback (fn [] @atom) [atom])]
-    (use-sync-external-store subscribe get-snapshot)))
-
 (defn use-state
   "Local component state. Returns a StateAtom that supports deref, reset!, and swap!."
   [initial]
@@ -156,3 +150,10 @@
                              (do (reset! snap-ref new-snap) new-snap))))
                        deps)]
     (use-sync-external-store subscribe get-snapshot)))
+
+(defn use-atom
+  "Subscribe to a ClojureScript atom. Returns the current value and re-renders
+  only when the value changes. Structurally-equal updates are treated as
+  no-ops — a swap! that produces a `=`-equal map won't re-render consumers."
+  [atom]
+  (use-selector atom not= identity [atom]))

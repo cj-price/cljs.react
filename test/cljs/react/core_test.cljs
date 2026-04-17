@@ -1,7 +1,7 @@
 (ns cljs.react.core-test
   (:require
-   [cljs.test :refer [deftest testing is]]
-   [cljs.react.core :as core :refer [Element]]
+   [cljs.test :refer [deftest testing is async]]
+   [cljs.react.core :as core :refer [Element ErrorBoundary]]
    [cljs.react.component :as component]
    [cljs.react.hook :as hook]
    ["react" :as react]
@@ -191,3 +191,130 @@
       (.rerender result (component/create-cljs-element MemoBasic {:x 1 :y 3}))
       (is (= 2 @memo-count) "different CLJS content → body runs")
       (cleanup))))
+
+;;; displayName
+
+(defnc ^:private DisplayNameProbe [_]
+  (Element {:tag "span"} "x"))
+
+(deftest defnc-display-name-test
+  (testing "defnc sets displayName for React DevTools legibility"
+    (is (= "DisplayNameProbe" (.-displayName DisplayNameProbe)))))
+
+(deftest memo-component-propagates-display-name-test
+  (testing "memo-component preserves the inner fn's displayName"
+    (let [inner-fn (fn [_] (Element {:tag "i"}))
+          _        (set! (.-displayName inner-fn) "MyInner")
+          wrapped  (component/memo-component inner-fn)]
+      (is (= "MyInner" (.-displayName wrapped))))))
+
+(deftest forward-ref-propagates-display-name-test
+  (testing "forward-ref preserves the inner fn's displayName"
+    (let [inner-fn (fn [_] (Element {:tag "i"}))
+          _        (set! (.-displayName inner-fn) "FwdInner")
+          wrapped  (component/forward-ref inner-fn)]
+      (is (= "FwdInner" (.-displayName wrapped))))))
+
+(deftest memo-forward-ref-propagates-display-name-test
+  (testing "memo-forward-ref preserves the inner fn's displayName"
+    (let [inner-fn (fn [_] (Element {:tag "i"}))
+          _        (set! (.-displayName inner-fn) "MemoFwdInner")
+          wrapped  (component/memo-forward-ref inner-fn)]
+      (is (= "MemoFwdInner" (.-displayName wrapped))))))
+
+(deftest memo-component-js-propagates-display-name-test
+  (testing "memo-component-js preserves the inner fn's displayName"
+    (let [inner-fn (fn [_] (Element {:tag "i"}))
+          _        (set! (.-displayName inner-fn) "MemoJsInner")
+          wrapped  (component/memo-component-js inner-fn)]
+      (is (= "MemoJsInner" (.-displayName wrapped))))))
+
+;;; ErrorBoundary
+
+(defn- throwing-child [{:keys [msg]}]
+  (throw (js/Error. (or msg "boom"))))
+
+(def ^:private Throwing (component/memo-component throwing-child))
+
+(deftest error-boundary-renders-fallback-test
+  (testing "ErrorBoundary renders fallback (fn) when a child throws"
+    ;; Silence React's expected error logging during this test.
+    (let [orig js/console.error]
+      (set! js/console.error (fn [& _]))
+      (try
+        (let [result (render
+                       (ErrorBoundary
+                         {:fallback (fn [err]
+                                      (Element {:tag "p" :className "err"}
+                                        (.-message err)))}
+                         (component/create-cljs-element Throwing {:msg "kaboom"})))
+              el (.. result -container -firstChild)]
+          (is (= "P" (.-tagName el)))
+          (is (= "err" (.-className el)))
+          (is (= "kaboom" (.-textContent el)))
+          (cleanup))
+        (finally (set! js/console.error orig))))))
+
+(deftest error-boundary-static-fallback-test
+  (testing "ErrorBoundary renders a non-fn :fallback as-is"
+    (let [orig js/console.error]
+      (set! js/console.error (fn [& _]))
+      (try
+        (let [result (render
+                       (ErrorBoundary
+                         {:fallback (Element {:tag "span"} "static fallback")}
+                         (component/create-cljs-element Throwing {})))]
+          (is (= "static fallback" (.-textContent (.-container result))))
+          (cleanup))
+        (finally (set! js/console.error orig))))))
+
+(deftest error-boundary-on-error-test
+  (testing "ErrorBoundary calls :on-error callback when a child throws"
+    (let [captured (atom nil)
+          orig js/console.error]
+      (set! js/console.error (fn [& _]))
+      (try
+        (render
+          (ErrorBoundary
+            {:fallback (fn [_] (Element {:tag "span"} "x"))
+             :on-error (fn [err _info] (reset! captured err))}
+            (component/create-cljs-element Throwing {:msg "telemetry"})))
+        (is (some? @captured))
+        (is (= "telemetry" (.-message @captured)))
+        (cleanup)
+        (finally (set! js/console.error orig))))))
+
+;;; StrictMode double-invocation safety
+
+(defn- strict [element]
+  (react/createElement react/StrictMode nil element))
+
+(deftest use-atom-strict-mode-test
+  (testing "use-atom under StrictMode leaves exactly one watch after mount"
+    (let [a (cljs.core/atom 0)
+          Probe (fn [_]
+                  (hook/use-atom a)
+                  (Element {:tag "i"}))
+          memoized (component/memo-component Probe)
+          result (render (strict (component/create-cljs-element memoized {})))]
+      ;; StrictMode intentionally double-invokes render / effect setup+cleanup,
+      ;; but after mount settles there should be exactly one live subscription.
+      (is (= 1 (count (.-watches a))))
+      (.unmount result)
+      (is (zero? (count (.-watches a)))))))
+
+(deftest db-provider-strict-mode-test
+  (testing "DBProvider under StrictMode keeps the db identity stable"
+    (let [seen (atom [])
+          Probe (fn [_]
+                  (let [db (core/use-db-atom)]
+                    (swap! seen conj db))
+                  (Element {:tag "i"}))
+          memoized (component/memo-component Probe)
+          result (render (strict
+                           (core/DBProvider {:initial-value {:x 1}}
+                             (component/create-cljs-element memoized {}))))]
+      (is (pos? (count @seen)))
+      (is (apply identical? @seen)
+          "all renders observe the same db atom")
+      (.unmount result))))

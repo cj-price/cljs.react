@@ -5,7 +5,7 @@
    [cljs.react.core :refer [Element]]
    ["react" :as react]
    ["global-jsdom/register"]
-   ["@testing-library/react" :refer [render cleanup]]))
+   ["@testing-library/react" :refer [render cleanup act]]))
 
 (deftest create-portal-test
   (testing "create-portal renders children into the target DOM node"
@@ -24,3 +24,35 @@
       (is (some? (.querySelector portal-target "#portal-child")))
       (cleanup)
       (.removeChild (.-body js/document) portal-target))))
+
+(deftest create-root-render-unmount-test
+  (testing "create-root + render attaches element; unmount detaches it"
+    (let [container (.createElement js/document "div")
+          _ (.appendChild (.-body js/document) container)
+          root (rdom/create-root container)]
+      (act #(rdom/render root (Element {:tag "p" :id "mounted"} "hello")))
+      (is (some? (.querySelector container "#mounted"))
+          "element should be mounted inside container after render")
+      (is (= "hello" (.-textContent container)))
+      (act #(rdom/render root (Element {:tag "p" :id "mounted"} "updated")))
+      (is (= "updated" (.-textContent container))
+          "render on an existing root should update the tree")
+      (act #(rdom/unmount root))
+      (is (nil? (.querySelector container "#mounted"))
+          "unmount should detach the tree")
+      (.removeChild (.-body js/document) container))))
+
+(deftest hydrate-root-test
+  (testing "hydrate-root attaches to pre-rendered markup"
+    (let [container (.createElement js/document "div")
+          _ (.appendChild (.-body js/document) container)
+          _ (set! (.-innerHTML container) "<p id=\"ssr\">server</p>")
+          root (atom nil)]
+      (act #(reset! root (rdom/hydrate-root
+                           container
+                           (Element {:tag "p" :id "ssr"} "server"))))
+      (is (some? (.querySelector container "#ssr"))
+          "hydrated element should be present after hydrateRoot")
+      (is (= "server" (.-textContent container)))
+      (act #(rdom/unmount @root))
+      (.removeChild (.-body js/document) container))))
