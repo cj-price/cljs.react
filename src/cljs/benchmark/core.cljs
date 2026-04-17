@@ -3,6 +3,7 @@
             [cljs.benchmark.props :as props]
             [cljs.benchmark.component :as component]
             [cljs.benchmark.memoization :as memoization]
+            [cljs.benchmark.perf-extra :as perf-extra]
             [cljs.benchmark.utils :as utils]))
 
 ;; ============================================================================
@@ -48,7 +49,8 @@
                   (element/run-all)
                   (props/run-all)
                   (component/run-all)
-                  (memoization/run-all))]
+                  (memoization/run-all)
+                  (perf-extra/run-all))]
     results))
 
 (defn -main

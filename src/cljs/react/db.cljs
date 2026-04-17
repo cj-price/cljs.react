@@ -13,14 +13,38 @@
     v)
 
   ISwap
-  (-swap! [_ f]
-    (get-in (swap! atom update-in path f) path))
-  (-swap! [_ f a]
-    (get-in (swap! atom update-in path f a) path))
-  (-swap! [_ f a b]
-    (get-in (swap! atom update-in path f a b) path))
-  (-swap! [_ f a b xs]
-    (get-in (swap! atom #(apply update-in % path f a b xs)) path))
+  (-swap! [cursor f]
+    (let [new-val (volatile! nil)]
+      (swap! (.-atom cursor)
+             (fn [s]
+               (let [nv (f (get-in s path))]
+                 (vreset! new-val nv)
+                 (assoc-in s path nv))))
+      @new-val))
+  (-swap! [cursor f a]
+    (let [new-val (volatile! nil)]
+      (swap! (.-atom cursor)
+             (fn [s]
+               (let [nv (f (get-in s path) a)]
+                 (vreset! new-val nv)
+                 (assoc-in s path nv))))
+      @new-val))
+  (-swap! [cursor f a b]
+    (let [new-val (volatile! nil)]
+      (swap! (.-atom cursor)
+             (fn [s]
+               (let [nv (f (get-in s path) a b)]
+                 (vreset! new-val nv)
+                 (assoc-in s path nv))))
+      @new-val))
+  (-swap! [cursor f a b xs]
+    (let [new-val (volatile! nil)]
+      (swap! (.-atom cursor)
+             (fn [s]
+               (let [nv (apply f (get-in s path) a b xs)]
+                 (vreset! new-val nv)
+                 (assoc-in s path nv))))
+      @new-val))
 
   IWatchable
   (-notify-watches [_ _ _])
@@ -40,12 +64,16 @@
   [^js props]
   (let [initial-value (.-initialValue props)
         children (.-children props)
-        db-ref (hook/use-ref nil)]
-    (when (nil? @db-ref)
-      (reset! db-ref (atom initial-value)))
+        db-ref (hook/use-ref nil)
+        _ (when (nil? @db-ref)
+            (reset! db-ref (atom initial-value)))
+        db @db-ref
+        ;; Memoize the JS value object so context consumers don't re-run on
+        ;; every render of the parent tree — db itself is stable.
+        js-value (hook/use-memo (fn [] #js {:value db}) [db])]
     (react/createElement
       (.-Provider db-context)
-      #js {:value @db-ref}
+      js-value
       children)))
 
 (defn DBProvider
@@ -71,18 +99,9 @@
   "Subscribe to a path in the db. Returns a cursor that can be deref'd and updated.
   Only re-renders when the value at path changes."
   [path]
-  (let [atom (use-db-atom)
-        subscribe (hook/use-callback
-                    (fn [callback]
-                      (let [key (gensym "cursor")]
-                        (add-watch atom key
-                          (fn [_ _ old new]
-                            (when (not= (get-in old path) (get-in new path))
-                              (callback))))
-                        #(remove-watch atom key)))
-                    [path])
-        get-snapshot (hook/use-callback
-                       (fn [] (get-in @atom path))
-                       [path])]
-    (hook/use-sync-external-store subscribe get-snapshot)
+  (let [atom (use-db-atom)]
+    (hook/use-selector atom
+                       (fn [o n] (not= (get-in o path) (get-in n path)))
+                       (fn [s] (get-in s path))
+                       [path])
     (hook/use-memo (fn [] (Cursor. atom path)) [path])))

@@ -35,48 +35,41 @@
   (let [[options args] (if (keyword? (first args))
                          [(first args) (rest args)]
                          [nil args])
+        _ (when-not (contains? #{nil :as-element :forward-ref} options)
+            (throw (ex-info (str "defnc: unknown option " options
+                                 " — expected :as-element, :forward-ref, or no option")
+                            {:component name :option options})))
         [arg-vec & body] args
-        as-element? (= options :as-element)
-        forward-ref? (= options :forward-ref)
         inner-name (symbol (str name "-inner"))
-        props-sym (if (empty? arg-vec) '_ (first arg-vec))]
-    (cond
-      as-element?
-      ;; :as-element version - accepts raw JS props
-      `(do
-         ;; Define the inner component function
-         (defn ^:private ~inner-name [~props-sym]
-           ~@body)
-         ;; Define as regular React element (uses react/createElement directly)
-         (def ~name
-           (let [memoized# (cljs.react.component/memo-component-js ~inner-name)]
-             (fn
-               ([] (react/createElement memoized# (cljs.react.component/clj->js-props {})))
-               ([props#] (react/createElement memoized# (cljs.react.component/clj->js-props props#)))
-               ([props# & children#] (apply react/createElement memoized# (cljs.react.component/clj->js-props props#) children#))))))
-      forward-ref?
-      ;; :forward-ref version - wraps with React.forwardRef + memo
-      `(do
-         (defn ^:private ~inner-name [~props-sym]
-           ~@body)
-         (def ~name
-           (let [memoized# (cljs.react.component/memo-forward-ref ~inner-name)]
-             (fn
-               ([] (cljs.react.component/create-cljs-element memoized# {}))
-               ([props#] (cljs.react.component/create-cljs-element memoized# props#))
-               ([props# & children#] (apply cljs.react.component/create-cljs-element memoized# props# children#))))))
-
-      :else
-      ;; Regular version - uses cljsProps wrapper
-      `(do
-         ;; Define the inner component function
-         (defn ^:private ~inner-name [~props-sym]
-           ~@body)
-         ;; Define the outer component as a function that creates React elements
-         ;; Supports both 0-arity and varargs
-         (def ~name
-           (let [memoized# (cljs.react.component/memo-component ~inner-name)]
-             (fn
-               ([] (cljs.react.component/create-cljs-element memoized# {}))
-               ([props#] (cljs.react.component/create-cljs-element memoized# props#))
-               ([props# & children#] (apply cljs.react.component/create-cljs-element memoized# props# children#)))))))))
+        props-sym (if (empty? arg-vec) '_ (first arg-vec))
+        ;; Pick the memo wrapper + element constructor per option.
+        ;; :as-element uses raw JS props (react/createElement + clj->js-props),
+        ;; default and :forward-ref both wrap props into cljsProps via create-cljs-element.
+        memo-wrapper (case options
+                       :as-element   'cljs.react.component/memo-component-js
+                       :forward-ref  'cljs.react.component/memo-forward-ref
+                       'cljs.react.component/memo-component)
+        build-fn (if (= options :as-element)
+                   '(fn
+                      ([memoized#] (react/createElement memoized# nil))
+                      ([memoized# props#]
+                       (react/createElement memoized# (cljs.react.component/clj->js-props props#)))
+                      ([memoized# props# & children#]
+                       (apply react/createElement memoized#
+                              (cljs.react.component/clj->js-props props#)
+                              children#)))
+                   '(fn
+                      ([memoized#] (cljs.react.component/create-cljs-element memoized# {}))
+                      ([memoized# props#] (cljs.react.component/create-cljs-element memoized# props#))
+                      ([memoized# props# & children#]
+                       (apply cljs.react.component/create-cljs-element memoized# props# children#))))]
+    `(do
+       (defn ^:private ~inner-name [~props-sym]
+         ~@body)
+       (def ~name
+         (let [memoized# (~memo-wrapper ~inner-name)
+               build# ~build-fn]
+           (fn
+             ([] (build# memoized#))
+             ([props#] (build# memoized# props#))
+             ([props# & children#] (apply build# memoized# props# children#))))))))

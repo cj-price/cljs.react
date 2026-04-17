@@ -6,31 +6,31 @@
    ["global-jsdom/register"]
    ["@testing-library/react" :refer [renderHook act render cleanup]]))
 
-;;; Test helpers — FormHandle fields (form-atom, opts-ref) are public deftype fields
+;;; Test helpers — use the public FormHandle accessors (form-atom, form-opts, form-state)
 
-(defn- form-state   [^form/FormHandle handle]   @(.-form-atom handle))
-(defn- form-values  [^form/FormHandle handle]   (:values (form-state handle)))
-(defn- form-errors  [^form/FormHandle handle]   (:errors (form-state handle)))
-(defn- form-error   [^form/FormHandle handle k] (get-in (form-state handle) [:errors k]))
-(defn- form-value   [^form/FormHandle handle k] (get-in (form-state handle) [:values k]))
+(defn- form-state   [handle]   (form/form-state handle))
+(defn- form-values  [handle]   (:values (form-state handle)))
+(defn- form-errors  [handle]   (:errors (form-state handle)))
+(defn- form-error   [handle k] (get-in (form-state handle) [:errors k]))
+(defn- form-value   [handle k] (get-in (form-state handle) [:values k]))
 
-(defn- form-set-error! [^form/FormHandle handle k msg]
-  (swap! (.-form-atom handle) assoc-in [:errors k] msg))
+(defn- form-set-error! [handle k msg]
+  (swap! (form/form-atom handle) assoc-in [:errors k] msg))
 
-(defn- form-set-value! [^form/FormHandle handle k v]
-  (swap! (.-form-atom handle) assoc-in [:values k] v))
+(defn- form-set-value! [handle k v]
+  (swap! (form/form-atom handle) assoc-in [:values k] v))
 
 (defn- make-form-state [values]
   {:values values :errors {} :dirty #{} :touched #{}
-   :validating? false :submitting? false :submitted? false})
+   :validating? false :submitting? false :submitted? false :submit-error nil})
 
 (defn- form-reset!
-  ([^form/FormHandle handle]
-   (let [vals (:values @(.-opts-ref handle))
+  ([handle]
+   (let [vals (:values (form/form-opts handle))
          init (if (satisfies? IDeref vals) @vals vals)]
-     (reset! (.-form-atom handle) (make-form-state init))))
-  ([^form/FormHandle handle new-values]
-   (reset! (.-form-atom handle) (make-form-state new-values))))
+     (reset! (form/form-atom handle) (make-form-state init))))
+  ([handle new-values]
+   (reset! (form/form-atom handle) (make-form-state new-values))))
 
 ;;; Render helpers
 
@@ -325,6 +325,75 @@
                      (is (true? (:submitted? (form-state handle))))
                      (done))))))))
 
+(deftest submit-error-surfaced-test
+  (testing "submit-fn rejection surfaces into :submit-error and clears :submitting?"
+    (async done
+      (let [err     (js/Error. "boom")
+            result  (renderHook
+                      #(form/use-form
+                         {:values    {:x 1}
+                          :on-submit (fn [_]
+                                       (js/Promise. (fn [_ reject] (reject err))))}))
+            handle  (.. result -result -current)
+            submit! (form/on-submit handle)
+            fake-e  #js {:preventDefault (fn [])}]
+        (-> (submit! fake-e)
+            (.then (fn []
+                     (let [s (form-state handle)]
+                       (is (false? (:submitting? s)))
+                       (is (false? (:submitted? s)))
+                       (is (identical? err (:submit-error s)))
+                       (done)))))))))
+
+(deftest submit-concurrent-guard-test
+  (testing "second submit during in-flight first submit is a no-op"
+    (async done
+      (let [call-count (cljs.core/atom 0)
+            result     (renderHook
+                         #(form/use-form
+                            {:values    {:x 1}
+                             :on-submit (fn [_]
+                                          (swap! call-count inc)
+                                          (js/Promise.
+                                            (fn [resolve _]
+                                              (js/setTimeout (fn [] (resolve nil)) 30))))}))
+            handle     (.. result -result -current)
+            submit!    (form/on-submit handle)
+            fake-e     #js {:preventDefault (fn [])}
+            p1         (submit! fake-e)
+            p2         (submit! fake-e)]
+        (-> (js/Promise.all #js [p1 p2])
+            (.then (fn [_]
+                     (is (= 1 @call-count) "submit-fn invoked exactly once")
+                     (let [s (form-state handle)]
+                       (is (false? (:submitting? s)))
+                       (is (true? (:submitted? s))))
+                     (done))))))))
+
+(deftest submit-clears-prior-error-test
+  (testing ":submit-error is cleared at the start of a new submit"
+    (async done
+      (let [step    (cljs.core/atom 0)
+            result  (renderHook
+                      #(form/use-form
+                         {:values    {:x 1}
+                          :on-submit (fn [_]
+                                       (swap! step inc)
+                                       (if (= 1 @step)
+                                         (js/Promise. (fn [_ reject] (reject (js/Error. "bad"))))
+                                         (js/Promise. (fn [resolve _] (resolve nil)))))}))
+            handle  (.. result -result -current)
+            submit! (form/on-submit handle)
+            fake-e  #js {:preventDefault (fn [])}]
+        (-> (submit! fake-e)
+            (.then (fn []
+                     (is (some? (:submit-error (form-state handle))))
+                     (submit! fake-e)))
+            (.then (fn []
+                     (is (nil? (:submit-error (form-state handle))))
+                     (is (true? (:submitted? (form-state handle))))
+                     (done))))))))
+
 ;;; reset-form!
 
 (deftest reset-form-test
@@ -365,7 +434,7 @@
                                      f))
           handle      (.. result -result -current)]
       ;; Mark :name dirty by changing it
-      (act #(swap! (.-form-atom handle)
+      (act #(swap! (form/form-atom handle)
                    (fn [s]
                      (-> s
                          (assoc-in [:values :name] "Custom")

@@ -1,12 +1,7 @@
 {:deps {:aliases [:dev :test]}
 
  :builds
- {:library
-  {:target :node-library
-   :output-to "dist/cljs-react.js"
-   :exports {:default cljs.react/default}}
-
-  :demo
+ {:demo
   {:target :browser
    :output-dir "public/js"
    :asset-path "/js"

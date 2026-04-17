@@ -80,6 +80,17 @@ use-effect   use-memo   use-callback   use-ref   use-atom
 - Forms use per-field subscriptions — only affected fields re-render on change
 - `*create-element*` dynamic var allows custom renderer injection
 
+## Naming Conventions
+
+- **CamelCase** — React element/component constructors (`Element`, `Fragment`,
+  `Suspense`, `DBProvider`, user-defined `defnc` components).
+- **kebab-case** — regular functions, hooks, and utilities (`use-state`,
+  `use-cursor`, `on-submit`, `clj->js-props`, `forward-ref`).
+
+When exposing new symbols: if the symbol returns a React element or is intended
+to be invoked in element-creation position, use CamelCase. Otherwise
+kebab-case.
+
 ## Testing
 
 - Tests live in `test/cljs/react/`

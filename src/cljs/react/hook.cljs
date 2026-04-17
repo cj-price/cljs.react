@@ -10,22 +10,29 @@
   (-reset! [_ v] ((aget arr 1) v))
 
   ISwap
-  (-swap! [_ f] ((aget arr 1) #(f %)))
+  (-swap! [_ f] ((aget arr 1) f))
   (-swap! [_ f a] ((aget arr 1) #(f % a)))
   (-swap! [_ f a b] ((aget arr 1) #(f % a b)))
   (-swap! [_ f a b xs] ((aget arr 1) #(apply f % a b xs))))
 
 (defn cljs-deps
   "Compare ClojureScript deps using structural equality.
-  Returns a JS array with a counter that increments only when deps change.
-  Must be called from within a hook context (uses useRef internally)."
+  Returns a JS array whose element[0] is a counter that bumps only when deps change.
+  Allocates a fresh JS array only when deps change — stable renders reuse the cached array,
+  so React's element-wise Object.is comparison sees no change. Must be called from
+  within a hook context (uses useRef internally)."
   [deps]
-  (let [ref (react/useRef #js {:deps deps :counter 0})
-        state (.-current ref)]
+  (let [ref (react/useRef nil)
+        state (or (.-current ref)
+                  (let [s #js {:deps deps :counter 0 :arr #js [0]}]
+                    (set! (.-current ref) s)
+                    s))]
     (when-not (= deps (.-deps state))
       (set! (.-deps state) deps)
-      (set! (.-counter state) (inc (.-counter state))))
-    #js [(.-counter state)]))
+      (let [c (inc (.-counter state))]
+        (set! (.-counter state) c)
+        (set! (.-arr state) #js [c])))
+    (.-arr state)))
 
 (defn use-effect
   ([effect-fn]
@@ -108,14 +115,44 @@
 (defn use-atom
   "Subscribe to a ClojureScript atom. Returns the current value and re-renders on changes."
   [atom]
-  (use-sync-external-store
-    (fn [callback]
-      (let [key (gensym "use-atom")]
-        (add-watch atom key (fn [_ _ _ _] (callback)))
-        #(remove-watch atom key)))
-    (fn [] @atom)))
+  (let [subscribe    (use-callback
+                       (fn [callback]
+                         (let [key (gensym "use-atom")]
+                           (add-watch atom key (fn [_ _ _ _] (callback)))
+                           #(remove-watch atom key)))
+                       [atom])
+        get-snapshot (use-callback (fn [] @atom) [atom])]
+    (use-sync-external-store subscribe get-snapshot)))
 
 (defn use-state
   "Local component state. Returns a StateAtom that supports deref, reset!, and swap!."
   [initial]
   (StateAtom. (react/useState initial)))
+
+(defn use-selector
+  "Subscribe to an IWatchable `source`, re-rendering only when `diff?` returns
+  truthy between old/new states. `select` projects a snapshot out of the
+  current state; equal projections return the cached reference (required for
+  useSyncExternalStore render stability).
+
+  `deps` controls when the subscription identity changes — pass [] for a
+  permanent subscription, or a vector of selector parameters otherwise."
+  [source diff? select deps]
+  (let [snap-ref     (use-ref nil)
+        subscribe    (use-callback
+                       (fn [callback]
+                         (let [key (gensym "use-selector")]
+                           (add-watch source key
+                             (fn [_ _ old new]
+                               (when (diff? old new) (callback))))
+                           #(remove-watch source key)))
+                       deps)
+        get-snapshot (use-callback
+                       (fn []
+                         (let [new-snap (select @source)
+                               cached   @snap-ref]
+                           (if (= new-snap cached)
+                             cached
+                             (do (reset! snap-ref new-snap) new-snap))))
+                       deps)]
+    (use-sync-external-store subscribe get-snapshot)))

@@ -12,29 +12,35 @@
     (fn [type props & children] ...)"
   react/createElement)
 
+(defn- props->js
+  "Always produce a JS object for a CLJS map — empty maps become #js {}.
+  Used recursively so nested empty maps round-trip faithfully."
+  [props]
+  (reduce-kv
+    (fn [^js js-obj k v]
+      (let [prop-name (if (keyword? k) (name k) (str k))]
+        (aset js-obj prop-name
+              (if (and (= prop-name "ref") (satisfies? hook/IReactRef v))
+                (hook/-react-ref v)
+                (cond
+                  (map? v) (props->js v)
+                  (sequential? v) (to-array v)
+                  :else v))))
+      js-obj)
+    #js {}
+    props))
+
 (defn clj->js-props
   "Convert ClojureScript map to JavaScript object for React props.
   Handles nested structures without modifying prop names.
 
-  Optimized version using reduce-kv and direct property access with aset."
+  Returns nil for nil or empty maps — React accepts nil props and skips
+  the props-object allocation that would otherwise happen on every call.
+  Nested empty maps are preserved as empty JS objects to avoid silently
+  changing the shape of values consumers read back."
   [props]
-  (if (nil? props)
-    nil
-    (if (zero? (count props))
-      #js {}
-      (reduce-kv
-        (fn [^js js-obj k v]
-          (let [prop-name (if (keyword? k) (name k) (str k))]
-            (aset js-obj prop-name
-                  (if (and (= prop-name "ref") (satisfies? hook/IReactRef v))
-                    (hook/-react-ref v)
-                    (cond
-                      (map? v) (clj->js-props v)
-                      (sequential? v) (to-array v)
-                      :else v))))
-          js-obj)
-        #js {}
-        props))))
+  (when (and props (pos? (count props)))
+    (props->js props)))
 
 (defn- make-react-props
   "Build the JS props object for a React createElement call.
@@ -52,7 +58,7 @@
 (defn create-cljs-element
   "Create a React element that works with ClojureScript data structures.
 
-  For component types: props are wrapped in JS object with :cljs-props key.
+  For component types: props are wrapped in JS object under the :cljsProps key.
   For DOM elements (strings): props are converted to JavaScript.
 
   Uses *create-element* dynamic var which defaults to react/createElement
@@ -65,8 +71,36 @@
 
   Returns:
     React element"
-  [type props & children]
-  (apply *create-element* type (make-react-props type props) (to-array children)))
+  ([type props]
+   (*create-element* type (make-react-props type props)))
+  ([type props c1]
+   (*create-element* type (make-react-props type props) c1))
+  ([type props c1 c2]
+   (*create-element* type (make-react-props type props) c1 c2))
+  ([type props c1 c2 c3]
+   (*create-element* type (make-react-props type props) c1 c2 c3))
+  ([type props c1 c2 c3 & more]
+   (apply *create-element* type (make-react-props type props) c1 c2 c3 more)))
+
+(defn- unwrap-cljs-props
+  "Read the CLJS props map out of the JS wrapper object, merging :children in
+  when React has attached them. Shared by memo-component, forward-ref, and
+  memo-forward-ref."
+  [js-props]
+  (let [cljs-props (gobj/get js-props "cljsProps")
+        children (gobj/get js-props "children")]
+    (if (undefined? children)
+      cljs-props
+      (assoc cljs-props :children children))))
+
+(defn- cljs-props-equal?
+  "React.memo comparator: CLJS = on cljsProps, JS === on children.
+  Used by both memo-component and memo-forward-ref."
+  [prev-js-props next-js-props]
+  (and (= (gobj/get prev-js-props "cljsProps")
+          (gobj/get next-js-props "cljsProps"))
+       (identical? (gobj/get prev-js-props "children")
+                   (gobj/get next-js-props "children"))))
 
 (defn memo-component
   "Wrap component with React.memo using ClojureScript equality.
@@ -81,29 +115,8 @@
   Returns:
     Memoized React component"
   [component-fn]
-  (let [;; Wrapper that extracts CLJS props and children
-        wrapper-fn
-        (fn [js-props]
-          (let [cljs-props (gobj/get js-props "cljsProps")
-                children (gobj/get js-props "children")
-                ;; Merge children into props if present
-                props-with-children (if (undefined? children)
-                                      cljs-props
-                                      (assoc cljs-props :children children))]
-            (component-fn props-with-children)))
-
-        ;; Comparison using ClojureScript = for props, JS === for children
-        are-equal?
-        (fn [prev-js-props next-js-props]
-          (let [prev-props (gobj/get prev-js-props "cljsProps")
-                next-props (gobj/get next-js-props "cljsProps")
-                prev-children (gobj/get prev-js-props "children")
-                next-children (gobj/get next-js-props "children")]
-            ;; Props must be equal AND children must be identical
-            (and (= prev-props next-props)
-                 (identical? prev-children next-children))))]
-
-    (react/memo wrapper-fn are-equal?)))
+  (react/memo (fn [js-props] (component-fn (unwrap-cljs-props js-props)))
+              cljs-props-equal?))
 
 (defn memo-component-js
   "Wrap component with React.memo for components that accept raw JS props.
@@ -136,10 +149,11 @@
   the provided renderer instead of react/createElement."
   [renderer]
   (fn [{:keys [tag] :as props} & children]
-    (let [element-type (or tag "div")
-          react-props (clj->js-props (dissoc props :tag))
+    (when (nil? tag)
+      (throw (js/Error. "Element requires a :tag prop")))
+    (let [react-props (clj->js-props (dissoc props :tag))
           js-children (to-array children)]
-      (apply renderer element-type react-props js-children))))
+      (apply renderer tag react-props js-children))))
 
 (defn make-create-cljs-element-fn
   "Create a create-cljs-element-like function bound to a specific renderer.
@@ -160,17 +174,10 @@
   [component-fn]
   (react/forwardRef
     (fn [js-props ref]
-      (let [cljs-props (gobj/get js-props "cljsProps")
-            children (gobj/get js-props "children")
-            props (cond-> (assoc cljs-props :ref (hook/->RefAtom ref))
-                    (not (undefined? children))
-                    (assoc :children children))]
-        (component-fn props)))))
+      (component-fn
+        (assoc (unwrap-cljs-props js-props) :ref (hook/->RefAtom ref))))))
 
 (defn memo-forward-ref
   "Combine forward-ref + React.memo with CLJS equality comparison."
   [component-fn]
-  (react/memo (forward-ref component-fn)
-    (fn [prev next]
-      (and (= (gobj/get prev "cljsProps") (gobj/get next "cljsProps"))
-           (identical? (gobj/get prev "children") (gobj/get next "children"))))))
+  (react/memo (forward-ref component-fn) cljs-props-equal?))

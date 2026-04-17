@@ -1,5 +1,6 @@
 {:deps {org.clojure/clojurescript {:mvn/version "1.11.132"}
         thheller/shadow-cljs {:mvn/version "2.28.20"}}
  :paths ["src"]
- :aliases {:test {:extra-paths ["test"]}
+ :aliases {:test {:extra-paths ["test"]
+                  :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}}
            :dev {:extra-paths ["dev"]}}}
