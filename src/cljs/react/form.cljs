@@ -166,14 +166,17 @@
   via use-form-meta) and :submitting? returns to false. The error is cleared
   at the start of the next submit."
   [opts]
-  (let [values      (:values opts)
-        validate-on (:validate-on opts)
-        initial     (if (satisfies? IDeref values) @values values)
-        handle-ref  (hook/use-ref nil)]
+  (let [validate-on (:validate-on opts)]
+    ;; Validate opts BEFORE any hook call — throwing after a hook would corrupt
+    ;; React's hook order for the next render. Bad config crashes the component
+    ;; before it registers any state, which is the safe behaviour.
     (when-not (or (nil? validate-on) (= :blur validate-on) (= :submit validate-on))
       (throw (ex-info (str "use-form: :validate-on must be nil, :submit, or :blur (got "
                            (pr-str validate-on) ")")
-                      {:type ::invalid-validate-on :got validate-on})))
+                      {:type ::invalid-validate-on :got validate-on}))))
+  (let [values     (:values opts)
+        initial    (if (satisfies? IDeref values) @values values)
+        handle-ref (hook/use-ref nil)]
     ;; Initialize once
     (when (nil? @handle-ref)
       (reset! handle-ref

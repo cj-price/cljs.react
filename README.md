@@ -89,6 +89,7 @@ Everything below is re-exported from `cljs.react.core` unless otherwise noted.
 | `use-transition` | `[is-pending start-transition]` for non-urgent updates |
 | `use-deferred-value` | `React.useDeferredValue` |
 | `use-atom` | Subscribe to a CLJS atom (equal swaps are no-ops) |
+| `use-selector` | Subscribe to an `IWatchable` with custom `diff?`/`select` (advanced) |
 
 ### Components
 

@@ -225,9 +225,7 @@
     (when (nil? tag)
       (throw (ex-info "Element requires a :tag prop"
                       {:type ::missing-tag :props props})))
-    (let [react-props (clj->js-props (dissoc props :tag))
-          js-children (to-array children)]
-      (apply renderer tag react-props js-children))))
+    (apply renderer tag (clj->js-props props :tag) (to-array children))))
 
 (defn make-create-cljs-element-fn
   "Create a create-cljs-element-like function bound to a specific renderer.
