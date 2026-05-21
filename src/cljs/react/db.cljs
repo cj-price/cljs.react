@@ -94,6 +94,10 @@
   Only re-renders when the value at path changes."
   [path]
   (let [atom (use-db-atom)]
+    ;; use-selector is called for its subscription side-effect: it wires the
+    ;; component up to re-render when the value at `path` changes. We discard
+    ;; the returned snapshot — callers read through the Cursor instead, which
+    ;; gives them swap!/reset! and stays the same identity across renders.
     (hook/use-selector atom
                        (fn [o n] (not= (get-in o path) (get-in n path)))
                        (fn [s] (get-in s path))

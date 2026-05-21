@@ -133,3 +133,15 @@
       (swap! a assoc :y 99)
       (is (zero? @fired))
       (remove-watch c :k))))
+
+(deftest cursor-remove-watch-unsubscribes-test
+  (testing "After remove-watch, subsequent path changes do not fire the watch"
+    (let [a (atom {:x 1})
+          c (db/->Cursor a [:x])
+          fired (atom 0)]
+      (add-watch c :k (fn [& _] (swap! fired inc)))
+      (reset! c 2)
+      (is (= 1 @fired))
+      (remove-watch c :k)
+      (reset! c 3)
+      (is (= 1 @fired) "watch should not have fired after remove-watch"))))

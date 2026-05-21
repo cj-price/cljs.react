@@ -532,7 +532,27 @@
           handle (.. result -result -current)]
       (is (false? (contains? (:touched (form-state handle)) :a)))
       (act #(form/set-field-touched! handle :a))
-      (is (contains? (:touched (form-state handle)) :a)))))
+      (is (contains? (:touched (form-state handle)) :a))))
+
+  (testing "set-field-touched! surfaces a previously-hidden error via use-field"
+    (let [{:keys [result handle-atom]} (render-field {:values {:name ""}} :name)]
+      ;; field starts untouched, so an error set directly on the atom is hidden
+      (act #(form-set-error! @handle-atom :name "Required"))
+      (is (nil? (:error (.. result -result -current))))
+      ;; touching the field surfaces it
+      (act #(form/set-field-touched! @handle-atom :name))
+      (is (= "Required" (:error (.. result -result -current)))))))
+
+(deftest use-field-handler-identity-test
+  (testing "use-field returns identical :onChange/:onBlur across re-renders (cached)"
+    (let [{:keys [^js result]} (render-field {:values {:name "Alice"}} :name)
+          first-field (.. result -result -current)]
+      (.rerender result)
+      (let [second-field (.. result -result -current)]
+        (is (identical? (:onChange first-field) (:onChange second-field))
+            "onChange is cached by [field-key checkbox?] so JSX prop equality holds")
+        (is (identical? (:onBlur first-field) (:onBlur second-field))
+            "onBlur is cached likewise")))))
 
 ;;; Reactive defaults
 

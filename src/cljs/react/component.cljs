@@ -223,7 +223,8 @@
   [renderer]
   (fn [{:keys [tag] :as props} & children]
     (when (nil? tag)
-      (throw (js/Error. "Element requires a :tag prop")))
+      (throw (ex-info "Element requires a :tag prop"
+                      {:type ::missing-tag :props props})))
     (let [react-props (clj->js-props (dissoc props :tag))
           js-children (to-array children)]
       (apply renderer tag react-props js-children))))

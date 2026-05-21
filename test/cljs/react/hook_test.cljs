@@ -356,3 +356,30 @@
                           :ref ext-ref}))]
       (is (some? (.-current ext-ref)))
       (is (= "INPUT" (.. ext-ref -current -tagName))))))
+
+(deftest use-id-test
+  (testing "returns a non-empty string id, stable across re-renders"
+    (let [r (renderHook #(hook/use-id))
+          id1 (.. r -result -current)]
+      (is (string? id1))
+      (is (pos? (count id1)))
+      (.rerender r)
+      (is (= id1 (.. r -result -current)) ":id is stable across re-renders")))
+  (testing "two hook calls in the same component yield distinct ids"
+    (let [r (renderHook #(let [a (hook/use-id)
+                               b (hook/use-id)]
+                           [a b]))
+          [a b] (.. r -result -current)]
+      (is (not= a b)))))
+
+(deftest use-transition-test
+  (testing "use-transition returns [pending? start-transition]"
+    (let [r (renderHook #(hook/use-transition))
+          [pending start] (.. r -result -current)]
+      (is (false? pending))
+      (is (fn? start)))))
+
+(deftest use-deferred-value-test
+  (testing "use-deferred-value returns its argument (no concurrent priority in test)"
+    (let [r (renderHook #(hook/use-deferred-value "abc"))]
+      (is (= "abc" (.. r -result -current))))))

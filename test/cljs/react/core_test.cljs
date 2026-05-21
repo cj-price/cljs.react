@@ -50,6 +50,29 @@
       (is (= "c" (.-textContent (aget (.-children ul) 2))))
       (cleanup))))
 
+(deftest element-5plus-arity-test
+  (testing "Element 5+ children path (apply) renders every child"
+    ;; The 5+-arity arm of Element routes through `apply *create-element*`;
+    ;; the 1-4 arity arms inline the createElement call. Pin both shapes
+    ;; produce the same DOM so a future refactor doesn't silently regress.
+    (let [result (render (Element {:tag "ul"}
+                           (Element {:tag "li" :key "a"} "a")
+                           (Element {:tag "li" :key "b"} "b")
+                           (Element {:tag "li" :key "c"} "c")
+                           (Element {:tag "li" :key "d"} "d")
+                           (Element {:tag "li" :key "e"} "e")))
+          ul (.. result -container -firstChild)]
+      (is (= 5 (.. ul -children -length)))
+      (is (= "a" (.-textContent (aget (.-children ul) 0))))
+      (is (= "e" (.-textContent (aget (.-children ul) 4))))
+      (cleanup))))
+
+(deftest element-missing-tag-ex-info-test
+  (testing "Element :tag-missing throws an ex-info with :type ::missing-tag"
+    (let [e (try (Element {}) nil (catch :default e e))]
+      (is (some? e))
+      (is (= :cljs.react.core/missing-tag (:type (ex-data e)))))))
+
 (deftest element-nested-children-test
   (testing "Element handles nested Elements"
     (let [result (render (Element {:tag "div"}
