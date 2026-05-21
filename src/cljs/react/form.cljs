@@ -86,11 +86,14 @@
                    (get-in new-s [:errors field-key]))))))
 
 (defn- field-diff? [old-s new-s field-key]
-  (or (not= (get-in old-s [:values field-key])
-            (get-in new-s [:values field-key]))
-      (not= (contains? (:dirty old-s) field-key)
-            (contains? (:dirty new-s) field-key))
-      (touched-error-changed? old-s new-s field-key)))
+  ;; Fast path: same state identity → nothing changed for this field either.
+  ;; Watchers can fire with identical states under some test/devtool flows.
+  (and (not (identical? old-s new-s))
+       (or (not= (get-in old-s [:values field-key])
+                 (get-in new-s [:values field-key]))
+           (not= (contains? (:dirty old-s) field-key)
+                 (contains? (:dirty new-s) field-key))
+           (touched-error-changed? old-s new-s field-key))))
 
 (defn- build-handlers [^FormHandle handle field-key checkbox?]
   (let [extract-fn (if checkbox?
@@ -163,9 +166,14 @@
   via use-form-meta) and :submitting? returns to false. The error is cleared
   at the start of the next submit."
   [opts]
-  (let [values     (:values opts)
-        initial    (if (satisfies? IDeref values) @values values)
-        handle-ref (hook/use-ref nil)]
+  (let [values      (:values opts)
+        validate-on (:validate-on opts)
+        initial     (if (satisfies? IDeref values) @values values)
+        handle-ref  (hook/use-ref nil)]
+    (when-not (or (nil? validate-on) (= :blur validate-on) (= :submit validate-on))
+      (throw (ex-info (str "use-form: :validate-on must be nil, :submit, or :blur (got "
+                           (pr-str validate-on) ")")
+                      {:type ::invalid-validate-on :got validate-on})))
     ;; Initialize once
     (when (nil? @handle-ref)
       (reset! handle-ref

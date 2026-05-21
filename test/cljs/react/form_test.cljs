@@ -526,6 +526,16 @@
         (is (= {} (:errors state)))
         (is (nil? (:submit-error state)))))))
 
+(deftest use-form-rejects-unknown-validate-on-test
+  (testing "use-form throws ex-info when :validate-on is not nil/:submit/:blur"
+    (let [thrown (atom nil)]
+      (try
+        (render-form {:values {:a 1} :validate-on :whenever})
+        (catch :default e (reset! thrown e)))
+      (is (some? @thrown))
+      (is (= :cljs.react.form/invalid-validate-on (:type (ex-data @thrown))))
+      (is (= :whenever (:got (ex-data @thrown)))))))
+
 (deftest set-field-touched-test
   (testing "set-field-touched! adds a single key to :touched"
     (let [result (render-form {:values {:a 1}})

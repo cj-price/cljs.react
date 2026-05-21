@@ -87,6 +87,8 @@
   use-atom hook/use-atom)
 (def ^{:doc "React.useSyncExternalStore. Subscribe to an external store with (fn subscribe [cb]) and (fn get-snapshot [])."}
   use-sync-external-store hook/use-sync-external-store)
+(def ^{:doc "Subscribe to an IWatchable source with a custom diff?/select pair. See cljs.react.hook/use-selector for details."}
+  use-selector hook/use-selector)
 (def ^{:doc "Returns [is-pending start-transition] for marking updates as non-urgent. Wrap state updates in start-transition to keep the UI responsive."}
   use-transition hook/use-transition)
 (def ^{:doc "React.useDeferredValue. Returns a deferred version of the supplied value that lags slightly behind during expensive updates."}
