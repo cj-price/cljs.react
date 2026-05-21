@@ -1,5 +1,6 @@
 (ns cljs.react.demo.advanced
-  (:require [cljs.react.hook :refer [use-ref use-state]]
+  (:require [clojure.string :as string]
+            [cljs.react.hook :refer [use-ref use-state]]
             [cljs.react.demo.util :refer [CodeAndOutput Div P H2 H3 H4
                                           Span Strong Button Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))
@@ -28,7 +29,7 @@
   (Div {:className (str "user-card" (when-not active " inactive"))}
     (Div {:className "user-header"}
       (H4 name)
-      (Badge {:text (clojure.string/upper-case role) :type role}))
+      (Badge {:text (string/upper-case role) :type role}))
     (P {:className "user-email"} email)
     (P {:className "user-status"}
       (if active "✓ Active" "○ Inactive"))))

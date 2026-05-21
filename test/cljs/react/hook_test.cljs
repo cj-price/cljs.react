@@ -1,6 +1,6 @@
 (ns cljs.react.hook-test
   (:require
-   [cljs.test :refer [deftest testing is async use-fixtures]]
+   [cljs.test :refer [deftest testing is]]
    [cljs.react.hook :as hook]
    [cljs.react.component :as component]
    ["global-jsdom/register"]
@@ -323,7 +323,7 @@
   (testing "swap! that produces a =-equal value does not create a new render"
     (let [a            (cljs.core/atom {:k "v"})
           render-count (cljs.core/atom 0)
-          result       (renderHook #(do (swap! render-count inc)
+          _            (renderHook #(do (swap! render-count inc)
                                         (hook/use-atom a)))]
       (is (= 1 @render-count))
       ;; swap to a structurally equal but non-identical map
@@ -350,7 +350,7 @@
               (react/createElement "input"
                 #js {:ref (hook/react-ref ref)
                      :placeholder placeholder})))
-          result (render
+          _      (render
                    (react/createElement my-input
                      #js {:cljsProps {:placeholder "type here"}
                           :ref ext-ref}))]

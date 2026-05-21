@@ -63,8 +63,8 @@
 
       :else
       (let [thresholds (utils/read-thresholds)
-            results (run-all-benchmarks)
-            summary (utils/display-results results thresholds)]
+            results    (run-all-benchmarks)]
+        (utils/display-results results thresholds)
 
         ;; Save baseline if requested
         (when (:save-baseline? opts)

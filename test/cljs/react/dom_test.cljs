@@ -3,7 +3,6 @@
    [cljs.test :refer [deftest testing is]]
    [cljs.react.dom :as rdom]
    [cljs.react.core :refer [Element]]
-   ["react" :as react]
    ["global-jsdom/register"]
    ["@testing-library/react" :refer [render cleanup act]]))
 

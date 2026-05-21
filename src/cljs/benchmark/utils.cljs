@@ -1,5 +1,6 @@
 (ns cljs.benchmark.utils
-  (:require [cljs.reader :as reader]
+  (:require [clojure.string :as string]
+            [cljs.reader :as reader]
             ["fs" :as fs]
             ["path" :as path]))
 
@@ -13,7 +14,7 @@
   ;; Lookahead inserts a comma between digit pairs where 3-digit groups follow
   ;; up to end-of-number. Works for integers and decimals; only the integer
   ;; portion gets commas.
-  (clojure.string/replace (str n) #"\B(?=(\d{3})+(?!\d))" ","))
+  (string/replace (str n) #"\B(?=(\d{3})+(?!\d))" ","))
 
 (defn format-duration
   "Convert nanoseconds to appropriate unit (ns, μs, ms)"

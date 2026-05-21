@@ -1,12 +1,12 @@
 (ns cljs.react.core-test
   (:require
-   [cljs.test :refer [deftest testing is async]]
+   [cljs.test :refer [deftest testing is]]
    [cljs.react.core :as core :refer [Element ErrorBoundary]]
    [cljs.react.component :as component]
    [cljs.react.hook :as hook]
    ["react" :as react]
    ["global-jsdom/register"]
-   ["@testing-library/react" :refer [render renderHook act cleanup]])
+   ["@testing-library/react" :refer [render renderHook cleanup]])
   (:require-macros [cljs.react.core :refer [defnc]]))
 
 ;;; Element
@@ -168,7 +168,7 @@
 (deftest defnc-forward-ref-test
   (testing ":forward-ref gives component :ref as RefAtom, wire-through to DOM"
     (let [ext-ref (react/createRef)
-          result (render
+          _      (render
                    (react/createElement (.-type (RefInput))
                      #js {:cljsProps {:placeholder "type here"}
                           :ref ext-ref}))]

@@ -213,24 +213,24 @@
     (let [calls (atom [])
           mock-renderer (fn [& args] (swap! calls conj args) :fake-element)
           create (component/make-create-cljs-element-fn mock-renderer)
-          _ (create "div" {:id "x"} "a")]
-      (let [[type js-props child] (first @calls)]
-        (is (= "div" type))
-        (is (= "x" (gobj/get js-props "id")))
-        (is (= "a" child)))))
+          _ (create "div" {:id "x"} "a")
+          [type js-props child] (first @calls)]
+      (is (= "div" type))
+      (is (= "x" (gobj/get js-props "id")))
+      (is (= "a" child))))
 
   (testing "for component types it wraps props in cljsProps"
     (let [calls (atom [])
           mock-renderer (fn [& args] (swap! calls conj args) :fake-element)
           create (component/make-create-cljs-element-fn mock-renderer)
           my-comp (fn [_] nil)
-          _ (create my-comp {:x 1 :key "k"} "child")]
-      (let [[type js-props child] (first @calls)]
-        (is (identical? my-comp type))
-        (is (= {:x 1 :key "k"} (gobj/get js-props "cljsProps")))
-        (is (= "k" (gobj/get js-props "key"))
-            ":key is hoisted to the top level so React can see it")
-        (is (= "child" child))))))
+          _ (create my-comp {:x 1 :key "k"} "child")
+          [type js-props child] (first @calls)]
+      (is (identical? my-comp type))
+      (is (= {:x 1 :key "k"} (gobj/get js-props "cljsProps")))
+      (is (= "k" (gobj/get js-props "key"))
+          ":key is hoisted to the top level so React can see it")
+      (is (= "child" child)))))
 
 ;;; memo-component-js
 

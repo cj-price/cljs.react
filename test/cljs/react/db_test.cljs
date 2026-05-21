@@ -2,9 +2,7 @@
   (:require
    [cljs.test :refer [deftest testing is]]
    [cljs.react.db :as db]
-   [cljs.react.hook :as hook]
    ["global-jsdom/register"]
-   ["react" :as react]
    ["@testing-library/react" :refer [renderHook act]]))
 
 (defn db-wrapper

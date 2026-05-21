@@ -2,9 +2,8 @@
   (:require
    [cljs.test :refer [deftest testing is async]]
    [cljs.react.form :as form]
-   ["react" :as react]
    ["global-jsdom/register"]
-   ["@testing-library/react" :refer [renderHook act render cleanup]]))
+   ["@testing-library/react" :refer [renderHook act]]))
 
 ;;; Test helpers — use the public FormHandle accessors (form-atom, form-opts, form-state)
 
@@ -78,7 +77,7 @@
       (is (= "Alice" (:value field)))))
 
   (testing "error is nil when not touched"
-    (let [{:keys [result handle-atom]} (render-field {:values {:name ""}} :name)
+    (let [{:keys [result]} (render-field {:values {:name ""}} :name)
           field (.. result -result -current)]
       (is (nil? (:error field)))))
 
@@ -90,7 +89,7 @@
         (is (= "Bob" (:value updated))))))
 
   (testing "onBlur marks field touched"
-    (let [{:keys [result handle-atom]}
+    (let [{:keys [result]}
           (render-field {:values {:name ""}
                          :validate (fn [_] {:name "Required"})}
                         :name)
@@ -217,7 +216,7 @@
 
 ;;; Validation (sync)
 
-(deftest sync-validation-test
+(deftest sync-validation-errors-test
   (testing "submit with errors prevents submission"
     (async done
       (let [submitted (cljs.core/atom false)
@@ -233,8 +232,9 @@
             (.then (fn []
                      (is (false? @submitted))
                      (is (= "Required" (form-error handle :name)))
-                     (done)))))))
+                     (done))))))))
 
+(deftest sync-validation-valid-test
   (testing "submit with valid data calls on-submit"
     (async done
       (let [submitted (cljs.core/atom false)
@@ -270,17 +270,17 @@
                              f))
             handle      (.. result -result -current)
             submit!     (form/on-submit handle)
-            fake-e      #js {:preventDefault (fn [])}]
-        (let [p (submit! fake-e)]
-          ;; validation promise is still pending — validating? must be true
-          (is (true? (:validating? (form-state handle))))
-          ;; resolve the deferred — no errors
-          (@deferred nil)
-          (-> p
-              (.then (fn []
-                       (is (false? (:validating? (form-state handle))))
-                       (.unmount result)
-                       (done)))))))))
+            fake-e      #js {:preventDefault (fn [])}
+            p           (submit! fake-e)]
+        ;; validation promise is still pending — validating? must be true
+        (is (true? (:validating? (form-state handle))))
+        ;; resolve the deferred — no errors
+        (@deferred nil)
+        (-> p
+            (.then (fn []
+                     (is (false? (:validating? (form-state handle))))
+                     (.unmount result)
+                     (done))))))))
 
 ;;; Validation (async)
 
@@ -440,15 +440,15 @@
                                                                (reject (js/Error. "nope")))))
                                  :validate-on :blur})]
                         (reset! handle-atom f)
-                        (form/use-field f :name)))]
-        (let [field (.. result -result -current)]
-          (-> (js/Promise.resolve
-                (act #(try ((:onBlur field) nil) (catch :default _ nil))))
-              (.then flush-microtasks)
-              (.then (fn []
-                       (is (false? (:validating? (form-state @handle-atom))))
-                       (.unmount result)
-                       (done)))))))))
+                        (form/use-field f :name)))
+            field  (.. result -result -current)]
+        (-> (js/Promise.resolve
+              (act #(try ((:onBlur field) nil) (catch :default _ nil))))
+            (.then flush-microtasks)
+            (.then (fn []
+                     (is (false? (:validating? (form-state @handle-atom))))
+                     (.unmount result)
+                     (done))))))))
 
 (deftest submit-clears-prior-error-test
   (testing ":submit-error is cleared at the start of a new submit"
