@@ -1,6 +1,6 @@
 (ns cljs.react.demo
-  (:require ["react" :as react]
-            [cljs.react.dom :as dom]
+  (:require [cljs.react.dom :as dom]
+            [cljs.react.hook :refer [use-state]]
             [cljs.react.demo.basics :refer [BasicsTab]]
             [cljs.react.demo.state :refer [StateTab]]
             [cljs.react.demo.effects :refer [EffectsTab]]
@@ -14,7 +14,7 @@
 
 (defnc App
   []
-  (let [[selected-section set-selected-section] (react/useState :basics)
+  (let [selected (use-state :basics)
         sections [{:id :basics :title "Basic Components" :emoji "🧱"}
                   {:id :state :title "State Management" :emoji "📊"}
                   {:id :effects :title "Side Effects" :emoji "⚡"}
@@ -35,18 +35,18 @@
         (Div {:className "container"}
           (for [section sections]
             (Button {:key (:id section)
-                     :className (if (= selected-section (:id section)) "active" "")
-                     :onClick #(set-selected-section (:id section))}
+                     :className (if (= @selected (:id section)) "active" "")
+                     :onClick #(reset! selected (:id section))}
               (:emoji section) " " (:title section)))))
 
       (Main
-        (when (= selected-section :basics)   (BasicsTab))
-        (when (= selected-section :state)    (StateTab))
-        (when (= selected-section :effects)  (EffectsTab))
-        (when (= selected-section :advanced) (AdvancedTab))
-        (when (= selected-section :db)       (DBTab))
-        (when (= selected-section :forms)    (FormsTab))
-        (when (= selected-section :mui)      (MUITab)))
+        (when (= @selected :basics)   (BasicsTab))
+        (when (= @selected :state)    (StateTab))
+        (when (= @selected :effects)  (EffectsTab))
+        (when (= @selected :advanced) (AdvancedTab))
+        (when (= @selected :db)       (DBTab))
+        (when (= @selected :forms)    (FormsTab))
+        (when (= @selected :mui)      (MUITab)))
 
       (Footer
         (Div {:className "container"}

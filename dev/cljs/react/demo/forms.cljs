@@ -1,6 +1,5 @@
 (ns cljs.react.demo.forms
-  (:require [cljs.react.core :refer [use-ref]]
-            ["react" :as react]
+  (:require [cljs.react.core :refer [use-ref use-state]]
             [cljs.react.form :as form]
             [cljs.react.demo.util :refer [CodeAndOutput Div P H2 H3 Span
                                           Label Input Form Button Section]]
@@ -190,7 +189,7 @@
         _            (when (nil? @atom-ref)
                        (reset! atom-ref (atom {:first-name "" :last-name "" :email ""})))
         profile-atom @atom-ref
-        [active set-active!] (react/useState "none")
+        active       (use-state "none")
         f            (form/use-form {:values profile-atom})
         first-fp     (form/use-field f :first-name)
         last-fp      (form/use-field f :last-name)
@@ -199,21 +198,21 @@
       (Div {:className "flex gap-2"}
         (Button {:type "button"
                  :className (str "px-4 py-2 rounded-lg text-sm font-semibold border-2 transition-all "
-                                 (if (= active "alice")
+                                 (if (= @active "alice")
                                    "border-koi-orange bg-orange-50 text-gray-900"
                                    "border-gray-200 text-gray-600 hover:border-gray-300"))
                  :onClick (fn []
                             (reset! profile-atom {:first-name "Alice" :last-name "Smith" :email "alice@example.com"})
-                            (set-active! "alice"))}
+                            (reset! active "alice"))}
           "Load Alice")
         (Button {:type "button"
                  :className (str "px-4 py-2 rounded-lg text-sm font-semibold border-2 transition-all "
-                                 (if (= active "bob")
+                                 (if (= @active "bob")
                                    "border-koi-orange bg-orange-50 text-gray-900"
                                    "border-gray-200 text-gray-600 hover:border-gray-300"))
                  :onClick (fn []
                             (reset! profile-atom {:first-name "Bob" :last-name "Jones" :email "bob@example.com"})
-                            (set-active! "bob"))}
+                            (reset! active "bob"))}
           "Load Bob"))
       (Form {:className "space-y-4"}
         (FormFieldInput (assoc first-fp :label "First Name" :placeholder "First name"))

@@ -1,6 +1,5 @@
 (ns cljs.react.demo.advanced
-  (:require ["react" :as react]
-            [cljs.react.hook :refer [use-ref]]
+  (:require [cljs.react.hook :refer [use-ref use-state]]
             [cljs.react.demo.util :refer [CodeAndOutput Div P H2 H3 H4
                                           Span Strong Button Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))
@@ -56,18 +55,18 @@
 
 (defnc MemoizationDemo
   []
-  (let [[count set-count] (react/useState 0)
-        [_ set-unrelated-state] (react/useState "")]
+  (let [count (use-state 0)
+        unrelated (use-state "")]
     (Div {:className "demo-box"}
       (H3 "Memoization Behavior")
       (P "Components are memoized with React.memo using CLJS equality")
       (Div {:className "button-group"}
-        (Button {:onClick #(set-count inc)} "Increment Count")
-        (Button {:onClick #(set-unrelated-state (str (random-uuid)))}
+        (Button {:onClick #(swap! count inc)} "Increment Count")
+        (Button {:onClick #(reset! unrelated (str (random-uuid)))}
           "Update Unrelated State"))
       (Div {:className "memo-test"}
         (RenderCounter {:name "Parent Component"})
-        (RenderCounter {:name (str "Child with count=" count)})
+        (RenderCounter {:name (str "Child with count=" @count)})
         (P {:className "hint"}
           "Try clicking 'Update Unrelated State' - child shouldn't re-render!")))))
 

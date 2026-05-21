@@ -30,18 +30,18 @@
 (defnc RefDemo
   []
   (let [input-ref (use-ref)
-        [value set-value] (react/useState "")
+        value (use-state "")
         focus-input (fn []
                       (.focus @input-ref))]
     (Div {:className "demo-box"}
       (H3 "useRef Demo")
       (Input {:ref input-ref
               :type "text"
-              :value value
+              :value @value
               :placeholder "Click focus button..."
-              :onChange #(set-value (-> % .-target .-value))})
+              :onChange #(reset! value (-> % .-target .-value))})
       (Button {:onClick focus-input} "Focus Input")
-      (P "Value: " value))))
+      (P "Value: " @value))))
 
 (defnc ExpensiveComponent
   [{:keys [count on-click]}]
@@ -63,9 +63,9 @@
 
 (defnc MemoDemo
   []
-  (let [[count set-count] (react/useState 1)]
-    (ExpensiveComponent {:count count
-                         :on-click #(set-count inc)})))
+  (let [count (use-state 1)]
+    (ExpensiveComponent {:count @count
+                         :on-click #(swap! count inc)})))
 
 (defn use-toggle
   "Custom hook for toggle state"
