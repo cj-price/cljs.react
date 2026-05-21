@@ -139,3 +139,12 @@
   clear-errors! form/clear-errors!)
 (def ^{:doc "Mark a field as touched so its error becomes visible to use-field."}
   set-field-touched! form/set-field-touched!)
+
+;; Form escape hatches — for testing, devtools, or custom integrations.
+;; Most app code should stick to use-form / use-field / use-form-meta.
+(def ^{:doc "Return the raw form-state atom for direct inspection/mutation. Advanced: prefer use-form-meta or use-field for reactive reads."}
+  form-atom form/form-atom)
+(def ^{:doc "Return the current :use-form opts map (always fresh)."}
+  form-opts form/form-opts)
+(def ^{:doc "Return the current form state snapshot (equivalent to @(form-atom h))."}
+  form-state form/form-state)

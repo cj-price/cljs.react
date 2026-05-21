@@ -357,6 +357,41 @@
       (is (some? (.-current ext-ref)))
       (is (= "INPUT" (.. ext-ref -current -tagName))))))
 
+(deftest use-selector-custom-diff-and-select-test
+  (testing "diff? suppresses unrelated source changes; select projects a slice"
+    (let [a            (cljs.core/atom {:tracked 1 :other 0})
+          render-count (cljs.core/atom 0)
+          r            (renderHook
+                         #(do (swap! render-count inc)
+                              (hook/use-selector
+                                a
+                                (fn [o n] (not= (:tracked o) (:tracked n)))
+                                :tracked
+                                [])))]
+      (is (= 1 (.. r -result -current)))
+      (is (= 1 @render-count))
+      ;; Change unrelated key — no re-render.
+      (act #(swap! a assoc :other 99))
+      (is (= 1 @render-count))
+      ;; Change tracked key — re-render.
+      (act #(swap! a assoc :tracked 2))
+      (is (= 2 @render-count))
+      (is (= 2 (.. r -result -current)))
+      (.unmount r)))
+
+  (testing "structurally-equal select reuses the previous reference"
+    (let [a (cljs.core/atom {:k {:nested 1}})
+          r (renderHook
+              #(hook/use-selector
+                 a (fn [o n] (not= (:k o) (:k n))) :k []))
+          snap1 (.. r -result -current)]
+      ;; Replace :k with a new map that is = but not identical.
+      (act #(swap! a assoc :k {:nested 1}))
+      (let [snap2 (.. r -result -current)]
+        (is (identical? snap1 snap2)
+            "structurally-equal selects must reuse the cached reference"))
+      (.unmount r))))
+
 (deftest use-id-test
   (testing "returns a non-empty string id, stable across re-renders"
     (let [r (renderHook #(hook/use-id))

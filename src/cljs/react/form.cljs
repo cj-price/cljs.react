@@ -89,11 +89,15 @@
   ;; Fast path: same state identity → nothing changed for this field either.
   ;; Watchers can fire with identical states under some test/devtool flows.
   (and (not (identical? old-s new-s))
-       (or (not= (get-in old-s [:values field-key])
-                 (get-in new-s [:values field-key]))
-           (not= (contains? (:dirty old-s) field-key)
-                 (contains? (:dirty new-s) field-key))
-           (touched-error-changed? old-s new-s field-key))))
+       (let [old-values (:values old-s)
+             new-values (:values new-s)
+             old-dirty  (:dirty old-s)
+             new-dirty  (:dirty new-s)]
+         (or (not= (get old-values field-key)
+                   (get new-values field-key))
+             (not= (contains? old-dirty field-key)
+                   (contains? new-dirty field-key))
+             (touched-error-changed? old-s new-s field-key)))))
 
 (defn- build-handlers [^FormHandle handle field-key checkbox?]
   (let [extract-fn (if checkbox?
@@ -135,15 +139,15 @@
     #js {:onChange on-change :onBlur on-blur}))
 
 (defn- ensure-handlers!
-  "Value-keyed cache of {field-key, checkbox?} → #js {:onChange :onBlur}.
-  The cache lives in a CLJS atom on the FormHandle rather than a mutable JS
-  object, so it reads like every other piece of form state."
+  "Returns a memoized #js {:onChange :onBlur} pair for a given (field-key, checkbox?).
+  Cache is a two-level CLJS map: field-key → {boolean → handlers}. Two-level
+  lookup avoids allocating a fresh `[field-key checkbox?]` vector on every render."
   [^FormHandle handle field-key checkbox?]
   (let [cache-atom (.-handler-cache handle)
-        cache-key  [field-key (boolean checkbox?)]]
-    (or (get @cache-atom cache-key)
+        cb?        (boolean checkbox?)]
+    (or (get (get @cache-atom field-key) cb?)
         (let [handlers (build-handlers handle field-key checkbox?)]
-          (swap! cache-atom assoc cache-key handlers)
+          (swap! cache-atom assoc-in [field-key cb?] handlers)
           handlers))))
 
 ;;;; Hooks

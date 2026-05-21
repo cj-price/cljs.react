@@ -161,6 +161,33 @@
                        (check (+ init a b c) #(swap! % + a b c))))))]
     (is (:result result) (pr-str result))))
 
+(deftest cursor-watch-fires-iff-path-changes
+  ;; Cursor's IWatchable impl should fire the callback exactly when the value
+  ;; at path actually changes — unrelated atom transitions must not fire it.
+  (let [result (tc/quick-check num-tests
+                 (prop/for-all [path        (gen/vector gen/keyword 1 2)
+                                transitions (gen/vector
+                                              (gen/tuple
+                                                (gen/vector gen/keyword 1 2)
+                                                scalar-gen)
+                                              0 6)]
+                   (let [a       (atom {})
+                         c       (db/->Cursor a path)
+                         fires   (cljs.core/atom 0)
+                         _       (add-watch c ::k
+                                   (fn [_ _ _ _] (swap! fires inc)))
+                         expected (cljs.core/atom 0)
+                         prev     (cljs.core/atom (get-in @a path))]
+                     (doseq [[p v] transitions]
+                       (swap! a assoc-in p v)
+                       (let [now (get-in @a path)]
+                         (when (not= @prev now)
+                           (swap! expected inc)
+                           (reset! prev now))))
+                     (remove-watch c ::k)
+                     (= @expected @fires))))]
+    (is (:result result) (pr-str result))))
+
 (deftest memo-component-render-count
   ;; For any sequence of props, body invocation count equals the number of
   ;; distinct adjacent groups (since CLJS = collapses consecutive equal props).

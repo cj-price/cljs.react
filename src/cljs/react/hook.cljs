@@ -138,7 +138,10 @@
   (let [cache-ref    (use-ref nil)
         subscribe    (use-callback
                        (fn [callback]
-                         (let [key (gensym "use-selector")]
+                         ;; Identity-keyed: a fresh JS object is unique per
+                         ;; subscribe call, avoiding gensym's global counter
+                         ;; touch and symbol allocation.
+                         (let [key #js {}]
                            (add-watch source key
                              (fn [_ _ old new]
                                (when (diff? old new) (callback))))

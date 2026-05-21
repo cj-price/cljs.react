@@ -82,7 +82,7 @@
   (or (hook/use-context db-context)
       (throw (ex-info
                "use-db / use-db-atom / use-cursor called outside a DBProvider — wrap your tree in (DBProvider {:initial-value ...} ...)"
-               {}))))
+               {:type ::no-provider}))))
 
 (defn use-db
   "Subscribe to the entire db. Returns the current value."
@@ -91,8 +91,16 @@
 
 (defn use-cursor
   "Subscribe to a path in the db. Returns a cursor that can be deref'd and updated.
-  Only re-renders when the value at path changes."
+  Only re-renders when the value at path changes.
+
+  `path` must be a non-empty vector. An empty or non-vector path is rejected with
+  an ex-info `:type ::invalid-cursor-path`; clobbering the whole db via a Cursor
+  is intentionally disallowed (use `use-db-atom` if you need root-level writes)."
   [path]
+  (when-not (and (vector? path) (seq path))
+    (throw (ex-info (str "use-cursor: path must be a non-empty vector (got "
+                         (pr-str path) ")")
+                    {:type ::invalid-cursor-path :got path})))
   (let [atom (use-db-atom)]
     ;; use-selector is called for its subscription side-effect: it wires the
     ;; component up to re-render when the value at `path` changes. We discard
