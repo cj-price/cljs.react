@@ -359,7 +359,7 @@
              :on-error (fn [_err info] (reset! captured info))}
             (component/create-cljs-element Throwing {:msg "stack"})))
         (is (some? @captured))
-        (is (some? (.-componentStack @captured))
+        (is (some? (.-componentStack ^js @captured))
             "info.componentStack is part of the React 19 contract")
         (cleanup)
         (finally (set! js/console.error orig))))))

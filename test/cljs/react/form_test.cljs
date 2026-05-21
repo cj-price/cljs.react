@@ -607,4 +607,14 @@
       ;; Dirty field should be preserved
       (is (= "Custom" (form-value handle :name)))
       ;; Un-dirtied field should update
-      (is (= "bob@example.com" (form-value handle :email))))))
+      (is (= "bob@example.com" (form-value handle :email)))))
+
+  (testing "watch on values atom is removed on unmount"
+    (let [values-atom (cljs.core/atom {:x 1})
+          before      (count (.-watches values-atom))
+          result      (render-form {:values values-atom})]
+      (is (= (inc before) (count (.-watches values-atom)))
+          "use-form registered a watch on the values atom")
+      (.unmount result)
+      (is (= before (count (.-watches values-atom)))
+          "watch was removed when the hook unmounted"))))

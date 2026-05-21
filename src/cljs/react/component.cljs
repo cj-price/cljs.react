@@ -34,6 +34,16 @@
     (sequential?  v)                  (to-array v)
     :else                              v))
 
+(defn- convert-prop
+  "Convert one (key, value) pair to its JS prop value. A :ref whose value
+  satisfies IReactRef is unwrapped; otherwise the value is converted via
+  convert-value. Shared by pam->js and props->js."
+  [k v]
+  (if (and (keyword-identical? k :ref)
+           (satisfies? hook/IReactRef v))
+    (hook/-react-ref v)
+    (convert-value v)))
+
 (defn- pam->js
   "Tight conversion path for PersistentArrayMap — reads the flat .arr field
   directly, skipping reduce-kv closure + IFn dispatch per pair. The
@@ -49,12 +59,8 @@
         (let [k (aget arr i)]
           (when-not (keyword-identical? k skip-key)
             (let [v  (aget arr (inc i))
-                  pn (if (keyword? k) (.-fqn k) (str k))
-                  v* (if (and (keyword-identical? k :ref)
-                              (satisfies? hook/IReactRef v))
-                       (hook/-react-ref v)
-                       (convert-value v))]
-              (aset out pn v*))))
+                  pn (if (keyword? k) (.-fqn k) (str k))]
+              (aset out pn (convert-prop k v)))))
         (recur (+ i 2))))
     out))
 
@@ -69,12 +75,8 @@
        (fn [^js out k v]
          (if (keyword-identical? k skip-key)
            out
-           (let [pn (if (keyword? k) (.-fqn k) (str k))
-                 v* (if (and (keyword-identical? k :ref)
-                             (satisfies? hook/IReactRef v))
-                      (hook/-react-ref v)
-                      (convert-value v))]
-             (aset out pn v*)
+           (let [pn (if (keyword? k) (.-fqn k) (str k))]
+             (aset out pn (convert-prop k v))
              out)))
        #js {}
        props))))
