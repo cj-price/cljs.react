@@ -8,6 +8,18 @@
    ["react" :as react]
    [cljs.react.hook :as hook]))
 
+(declare ^:no-doc Cursor)
+
+(defn- swap-cursor! [^Cursor cursor update-fn]
+  (let [new-val (volatile! nil)
+        path (.-path cursor)]
+    (swap! (.-atom cursor)
+           (fn [s]
+             (let [nv (update-fn (get-in s path))]
+               (vreset! new-val nv)
+               (assoc-in s path nv))))
+    @new-val))
+
 (deftype ^:no-doc Cursor [atom path]
   IDeref
   (-deref [_] (get-in @atom path))
@@ -18,38 +30,10 @@
     v)
 
   ISwap
-  (-swap! [cursor f]
-    (let [new-val (volatile! nil)]
-      (swap! (.-atom cursor)
-             (fn [s]
-               (let [nv (f (get-in s path))]
-                 (vreset! new-val nv)
-                 (assoc-in s path nv))))
-      @new-val))
-  (-swap! [cursor f a]
-    (let [new-val (volatile! nil)]
-      (swap! (.-atom cursor)
-             (fn [s]
-               (let [nv (f (get-in s path) a)]
-                 (vreset! new-val nv)
-                 (assoc-in s path nv))))
-      @new-val))
-  (-swap! [cursor f a b]
-    (let [new-val (volatile! nil)]
-      (swap! (.-atom cursor)
-             (fn [s]
-               (let [nv (f (get-in s path) a b)]
-                 (vreset! new-val nv)
-                 (assoc-in s path nv))))
-      @new-val))
-  (-swap! [cursor f a b xs]
-    (let [new-val (volatile! nil)]
-      (swap! (.-atom cursor)
-             (fn [s]
-               (let [nv (apply f (get-in s path) a b xs)]
-                 (vreset! new-val nv)
-                 (assoc-in s path nv))))
-      @new-val))
+  (-swap! [cursor f]         (swap-cursor! cursor f))
+  (-swap! [cursor f a]       (swap-cursor! cursor #(f % a)))
+  (-swap! [cursor f a b]     (swap-cursor! cursor #(f % a b)))
+  (-swap! [cursor f a b xs]  (swap-cursor! cursor #(apply f % a b xs)))
 
   IWatchable
   (-notify-watches [_ _ _]
@@ -75,13 +59,10 @@
         db-ref (hook/use-ref nil)
         _ (when (nil? @db-ref)
             (reset! db-ref (atom initial-value)))
-        db @db-ref
-        ;; Memoize the JS value object so context consumers don't re-run on
-        ;; every render of the parent tree — db itself is stable.
-        js-value (hook/use-memo (fn [] #js {:value db}) [db])]
+        db @db-ref]
     (react/createElement
       (.-Provider db-context)
-      js-value
+      #js {:value db}
       children)))
 
 (defn DBProvider
@@ -94,9 +75,12 @@
          children))
 
 (defn use-db-atom
-  "Returns the raw db atom from context."
+  "Returns the raw db atom from context. Throws if called outside a `DBProvider`."
   []
-  (hook/use-context db-context))
+  (or (hook/use-context db-context)
+      (throw (ex-info
+               "use-db / use-db-atom / use-cursor called outside a DBProvider — wrap your tree in (DBProvider {:initial-value ...} ...)"
+               {}))))
 
 (defn use-db
   "Subscribe to the entire db. Returns the current value."

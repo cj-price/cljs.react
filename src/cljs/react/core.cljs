@@ -122,3 +122,13 @@
   use-form-meta form/use-form-meta)
 (def ^{:doc "Return an onSubmit event handler for the form. 1-arity uses :on-submit from opts; 2-arity overrides with a submit fn."}
   on-submit form/on-submit)
+(def ^{:doc "Reset the form to its initial values, clearing errors, dirty/touched, and submit state. 2-arity resets to supplied values."}
+  reset-form! form/reset-form!)
+(def ^{:doc "Replace the form's :values map. Does not clear errors or flags."}
+  set-values! form/set-values!)
+(def ^{:doc "Replace the form's :errors map. Keys with errors are also marked touched so use-field surfaces them."}
+  set-errors! form/set-errors!)
+(def ^{:doc "Clear all field errors and any :submit-error."}
+  clear-errors! form/clear-errors!)
+(def ^{:doc "Mark a field as touched so its error becomes visible to use-field."}
+  set-field-touched! form/set-field-touched!)

@@ -9,6 +9,15 @@
 
 (deftype ^:no-doc FormHandle [form-atom opts-ref handler-cache])
 
+(defn- make-state [values]
+  {:values       values
+   :errors       {}
+   :dirty        #{}
+   :touched      #{}
+   :validating?  false
+   :submitting?  false
+   :submitted?   false
+   :submit-error nil})
 
 (defn form-atom
   "Return the mutable form-state atom for direct inspection/mutation (testing, devtools)."
@@ -25,15 +34,42 @@
   [^FormHandle h]
   @(.-form-atom h))
 
-(defn- make-state [values]
-  {:values       values
-   :errors       {}
-   :dirty        #{}
-   :touched      #{}
-   :validating?  false
-   :submitting?  false
-   :submitted?   false
-   :submit-error nil})
+(defn- current-initial-values [^FormHandle h]
+  (let [values (:values @(.-opts-ref h))]
+    (if (satisfies? IDeref values) @values values)))
+
+(defn reset-form!
+  "Reset the form to its initial values, clearing errors, dirty/touched flags,
+  and submit state. With a 2-arity call, reset to the supplied values instead."
+  ([^FormHandle h]
+   (reset! (.-form-atom h) (make-state (current-initial-values h))))
+  ([^FormHandle h values]
+   (reset! (.-form-atom h) (make-state values))))
+
+(defn set-values!
+  "Replace the form's `:values` map. Does not touch errors or flags."
+  [^FormHandle h values]
+  (swap! (.-form-atom h) assoc :values values))
+
+(defn set-errors!
+  "Replace the form's `:errors` map. Marks every keyed field as touched so the
+  errors are visible to `use-field` consumers."
+  [^FormHandle h errors]
+  (swap! (.-form-atom h)
+         (fn [s]
+           (-> s
+               (assoc :errors errors)
+               (update :touched into (keys errors))))))
+
+(defn clear-errors!
+  "Clear all field errors and any `:submit-error`."
+  [^FormHandle h]
+  (swap! (.-form-atom h) assoc :errors {} :submit-error nil))
+
+(defn set-field-touched!
+  "Mark a field as touched so its error becomes visible to `use-field`."
+  [^FormHandle h field-key]
+  (swap! (.-form-atom h) update :touched conj field-key))
 
 (defn- field-snap [state field-key]
   {:value (get-in state [:values field-key])
@@ -189,7 +225,12 @@
   Only re-renders when this specific field's value or error changes.
 
   opts map (optional):
-    :type - :checkbox for checkbox fields (reads e.target.checked, returns :checked key)"
+    :type - :checkbox for checkbox fields (reads e.target.checked, returns :checked key)
+
+  Radio groups: there is no dedicated :type :radio — use the field as a string
+  and set each input's :checked to (= field-value option) and :value to option,
+  e.g. (Element {:tag \"input\" :type \"radio\" :name \"color\" :value \"red\"
+                :checked (= (:value field) \"red\") :onChange (:onChange field)})."
   ([^FormHandle handle field-key]
    (use-field* handle field-key nil))
   ([^FormHandle handle field-key opts]

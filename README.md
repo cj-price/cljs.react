@@ -114,16 +114,25 @@ Everything below is re-exported from `cljs.react.core` unless otherwise noted.
 | `use-field` | Subscribe to a single field's slice; returns handlers + value/error |
 | `use-form-meta` | Subscribe to `{:validating? :submitting? :submitted? :errors :submit-error}` |
 | `on-submit` | Build the `onSubmit` event handler for a `FormHandle` |
+| `reset-form!` | Reset values to initial; clear errors / dirty / touched / submit state |
+| `set-values!` | Replace the form's `:values` map |
+| `set-errors!` | Replace `:errors` (and mark each keyed field touched) |
+| `clear-errors!` | Clear all field errors and `:submit-error` |
+| `set-field-touched!` | Mark a single field touched so its error renders |
 
 ### DOM mount (cljs.react.dom)
 
 | Symbol | Purpose |
 | --- | --- |
 | `create-root` | Wrap `ReactDOM.createRoot(container)` |
-| `hydrate-root` | Wrap `ReactDOM.hydrateRoot(container, element)` |
+| `hydrate-root` | Wrap `ReactDOM.hydrateRoot(container, element)` — for SSR-rendered markup |
 | `render` | `(.render root element)` |
 | `unmount` | `(.unmount root)` |
 | `create-portal` | `ReactDOM.createPortal(children, container)` |
+
+For SSR, render server-side with `react-dom/server` (e.g. `renderToString`) and
+on the client call `hydrate-root` on the same container; the initial CLJS
+element tree must match the server-rendered markup.
 
 ## Conventions
 
@@ -148,6 +157,30 @@ appears:
                  "Something went wrong: " (ex-message err)))}
   (RiskyChild))
 ```
+
+### `forward-ref` and `use-ref`
+
+`defnc` accepts a `:forward-ref` flag that wraps the component with
+`React.forwardRef`. Inside the body, the forwarded ref arrives as a `RefAtom`
+on the `:ref` key of props. Use `react-ref` to extract the raw JS ref object
+when attaching it to a DOM element:
+
+```clojure
+(defnc FancyInput :forward-ref
+  [{:keys [ref placeholder]}]
+  (Element {:tag "input" :ref (react-ref ref) :placeholder placeholder}))
+
+(defnc Parent []
+  (let [input-ref (use-ref nil)]
+    (Element {:tag "div"}
+      (FancyInput {:ref (react-ref input-ref) :placeholder "type here"})
+      (Element {:tag "button"
+                :onClick #(.focus @input-ref)}
+        "Focus"))))
+```
+
+`use-ref` returns a `RefAtom` — `@input-ref` gives back the current DOM node
+once the input has mounted.
 
 ### `:key` on function components
 
