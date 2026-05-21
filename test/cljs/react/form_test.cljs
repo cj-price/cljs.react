@@ -493,6 +493,47 @@
       (act #(form-reset! handle {:name "Carol"}))
       (is (= "Carol" (form-value handle :name))))))
 
+;;; Direct mutators: set-values!, set-errors!, clear-errors!, set-field-touched!
+
+(deftest set-values-test
+  (testing "set-values! replaces :values without touching errors / flags"
+    (let [result (render-form {:values {:a 1 :b 2}})
+          handle (.. result -result -current)
+          _      (form-set-error! handle :a "boom")]
+      (act #(form/set-values! handle {:a 99 :c 3}))
+      (is (= {:a 99 :c 3} (form-values handle)))
+      (is (= "boom" (form-error handle :a))
+          ":errors must be preserved across set-values!"))))
+
+(deftest set-errors-marks-touched-test
+  (testing "set-errors! replaces :errors AND marks the listed keys touched"
+    (let [result (render-form {:values {:a 1 :b 2}})
+          handle (.. result -result -current)]
+      (act #(form/set-errors! handle {:a "bad-a" :b "bad-b"}))
+      (let [state (form-state handle)]
+        (is (= {:a "bad-a" :b "bad-b"} (:errors state)))
+        (is (contains? (:touched state) :a))
+        (is (contains? (:touched state) :b))))))
+
+(deftest clear-errors-test
+  (testing "clear-errors! empties :errors AND clears :submit-error"
+    (let [result (render-form {:values {:a 1}})
+          handle (.. result -result -current)]
+      (swap! (form/form-atom handle)
+             assoc :errors {:a "x"} :submit-error (js/Error. "boom"))
+      (act #(form/clear-errors! handle))
+      (let [state (form-state handle)]
+        (is (= {} (:errors state)))
+        (is (nil? (:submit-error state)))))))
+
+(deftest set-field-touched-test
+  (testing "set-field-touched! adds a single key to :touched"
+    (let [result (render-form {:values {:a 1}})
+          handle (.. result -result -current)]
+      (is (false? (contains? (:touched (form-state handle)) :a)))
+      (act #(form/set-field-touched! handle :a))
+      (is (contains? (:touched (form-state handle)) :a)))))
+
 ;;; Reactive defaults
 
 (deftest reactive-defaults-test

@@ -50,7 +50,9 @@
   (-remove-watch [cursor k]
     (remove-watch (.-atom cursor) [::cursor k cursor])))
 
-(def ^:private db-context (react/createContext nil))
+;; defonce so hot-reload preserves context identity — otherwise existing
+;; <Provider> instances and their consumers would orphan on every reload.
+(defonce ^:private db-context (react/createContext nil))
 
 (defn- db-provider-inner
   [^js props]

@@ -74,6 +74,116 @@
           js-obj (component/clj->js-props {:ref callback})]
       (is (identical? callback (gobj/get js-obj "ref"))))))
 
+(deftest clj->js-props-namespaced-keyword-test
+  (testing "namespaced keywords use their fully-qualified name"
+    (let [js-obj (component/clj->js-props {:foo/bar "x" :a.b/c "y"})]
+      (is (= "x" (gobj/get js-obj "foo/bar")))
+      (is (= "y" (gobj/get js-obj "a.b/c"))))))
+
+(deftest clj->js-props-non-keyword-key-test
+  (testing "non-keyword, non-string keys are coerced via str"
+    (let [js-obj (component/clj->js-props {42 "n" 'sym "s"})]
+      (is (= "n" (gobj/get js-obj "42")))
+      (is (= "s" (gobj/get js-obj "sym"))))))
+
+(deftest clj->js-props-nil-and-false-values-test
+  (testing "nil and false values are preserved (not dropped)"
+    (let [js-obj (component/clj->js-props {:a nil :b false :c 0})]
+      (is (true? (gobj/containsKey js-obj "a")))
+      (is (nil? (gobj/get js-obj "a")))
+      (is (false? (gobj/get js-obj "b")))
+      (is (= 0 (gobj/get js-obj "c"))))))
+
+(deftest clj->js-props-nested-empty-map-test
+  (testing "nested empty maps round-trip as empty JS objects (not nil)"
+    (let [js-obj (component/clj->js-props {:style {}})
+          style (gobj/get js-obj "style")]
+      (is (object? style))
+      (is (zero? (alength (gobj/getKeys style)))))))
+
+(deftest clj->js-props-nested-ref-test
+  (testing ":ref inside a nested map is also unwrapped"
+    (let [result (renderHook #(hook/use-ref "init"))
+          ref-atom (.. result -result -current)
+          js-obj (component/clj->js-props {:inner {:ref ref-atom}})
+          inner (gobj/get js-obj "inner")]
+      (is (= (hook/react-ref ref-atom) (gobj/get inner "ref")))
+      (cleanup))))
+
+(deftest clj->js-props-list-and-seq-test
+  (testing "lists and lazy seqs become JS arrays"
+    (let [js-obj (component/clj->js-props {:list '(1 2 3)
+                                            :seq  (map inc [9 8 7])})
+          list-arr (gobj/get js-obj "list")
+          seq-arr  (gobj/get js-obj "seq")]
+      (is (array? list-arr))
+      (is (= [1 2 3] (vec list-arr)))
+      (is (array? seq-arr))
+      (is (= [10 9 8] (vec seq-arr))))))
+
+(deftest clj->js-props-vector-shallow-test
+  (testing "vector conversion is shallow — elements are not recursively converted"
+    ;; React arrays carry React elements (already JS) or primitives, never CLJS
+    ;; maps; `to-array` skips the recursive walk for speed. This test pins that
+    ;; contract so a future change doesn't quietly add deep conversion.
+    (let [inner  {:id 1}
+          js-obj (component/clj->js-props {:rows [inner]})
+          rows   (gobj/get js-obj "rows")]
+      (is (array? rows))
+      (is (identical? inner (aget rows 0))
+          "inner CLJS map is preserved by reference, not converted to a JS object"))))
+
+(deftest clj->js-props-hashmap-path-test
+  (testing "PersistentHashMap (>8 entries) takes the reduce-kv fallback path"
+    (let [big (zipmap (map #(keyword (str "k" %)) (range 12)) (range 12))]
+      ;; sanity: confirm we actually exercise the non-ArrayMap branch
+      (is (not (instance? PersistentArrayMap big)))
+      (let [js-obj (component/clj->js-props big)]
+        (is (= 11 (gobj/get js-obj "k11")))
+        (is (= 0  (gobj/get js-obj "k0")))
+        (is (= 12 (alength (gobj/getKeys js-obj))))))))
+
+(deftest clj->js-props-skip-key-arraymap-test
+  (testing "2-arity skip-key drops a top-level key (PersistentArrayMap path)"
+    (let [m {:tag "div" :id "x" :className "c"}
+          _ (is (instance? PersistentArrayMap m))
+          js-obj (component/clj->js-props m :tag)]
+      (is (nil? (gobj/get js-obj "tag")))
+      (is (false? (gobj/containsKey js-obj "tag")))
+      (is (= "x" (gobj/get js-obj "id")))
+      (is (= "c" (gobj/get js-obj "className"))))))
+
+(deftest clj->js-props-skip-key-hashmap-test
+  (testing "2-arity skip-key drops a top-level key (PersistentHashMap path)"
+    (let [big (assoc (zipmap (map #(keyword (str "k" %)) (range 12)) (range 12))
+                :tag "div")
+          _ (is (not (instance? PersistentArrayMap big)))
+          js-obj (component/clj->js-props big :tag)]
+      (is (false? (gobj/containsKey js-obj "tag")))
+      (is (= 11 (gobj/get js-obj "k11"))))))
+
+(deftest clj->js-props-skip-key-only-top-level-test
+  (testing "skip-key only applies at the top level, not in nested maps"
+    (let [js-obj (component/clj->js-props {:tag "div" :nested {:tag "keep"}} :tag)
+          nested (gobj/get js-obj "nested")]
+      (is (false? (gobj/containsKey js-obj "tag")))
+      (is (= "keep" (gobj/get nested "tag"))))))
+
+(deftest clj->js-props-skip-key-missing-test
+  (testing "skip-key for a key not in the map is a no-op"
+    (let [js-obj (component/clj->js-props {:id "x" :className "c"} :tag)]
+      (is (= "x" (gobj/get js-obj "id")))
+      (is (= "c" (gobj/get js-obj "className")))
+      (is (= 2 (alength (gobj/getKeys js-obj)))))))
+
+(deftest clj->js-props-skip-key-empty-after-drop-test
+  (testing "dropping the only key produces an empty JS object (not nil)"
+    ;; has-entries? gates on the input being non-empty, so the empty-map → nil
+    ;; short-circuit doesn't fire here — callers get an empty #js {}.
+    (let [js-obj (component/clj->js-props {:tag "div"} :tag)]
+      (is (object? js-obj))
+      (is (zero? (alength (gobj/getKeys js-obj)))))))
+
 ;;; make-element-fn (custom renderer)
 
 (deftest make-element-fn-happy-path-test

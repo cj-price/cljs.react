@@ -108,3 +108,28 @@
           c (db/->Cursor a [:x])]
       (is (thrown-with-msg? js/Error #"does not support -notify-watches"
             (-notify-watches c nil nil))))))
+
+(deftest use-db-atom-outside-provider-throws-test
+  (testing "use-db-atom throws when called without a DBProvider in the tree"
+    (is (thrown-with-msg? js/Error #"outside a DBProvider"
+          (renderHook #(db/use-db-atom))))))
+
+(deftest cursor-add-watch-fires-on-path-change-test
+  (testing "Cursor add-watch fires when the value at path changes"
+    (let [a (atom {:x 1})
+          c (db/->Cursor a [:x])
+          fired (atom [])]
+      (add-watch c :k (fn [_ _ old new] (swap! fired conj [old new])))
+      (reset! c 2)
+      (is (= [[1 2]] @fired))
+      (remove-watch c :k))))
+
+(deftest cursor-add-watch-suppresses-unrelated-change-test
+  (testing "Cursor add-watch does NOT fire when only an unrelated sibling changes"
+    (let [a (atom {:x 1 :y 1})
+          c (db/->Cursor a [:x])
+          fired (atom 0)]
+      (add-watch c :k (fn [& _] (swap! fired inc)))
+      (swap! a assoc :y 99)
+      (is (zero? @fired))
+      (remove-watch c :k))))

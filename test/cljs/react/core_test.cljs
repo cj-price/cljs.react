@@ -21,9 +21,22 @@
       (cleanup))))
 
 (deftest element-nil-tag-throws-test
-  (testing "Element with nil :tag throws"
-    (is (thrown? js/Error (Element {:tag nil} "oops")))
-    (is (thrown? js/Error (Element {} "oops")))))
+  (testing "Element with nil :tag throws across every arity"
+    (is (thrown? js/Error (Element {})))
+    (is (thrown? js/Error (Element {} "a")))
+    (is (thrown? js/Error (Element {} "a" "b")))
+    (is (thrown? js/Error (Element {} "a" "b" "c")))
+    (is (thrown? js/Error (Element {} "a" "b" "c" "d" "e")))))
+
+(deftest create-context-test
+  (testing "create-context returns an object with Provider/Consumer"
+    (let [ctx (core/create-context)]
+      (is (some? (.-Provider ctx)))
+      (is (some? (.-Consumer ctx)))))
+  (testing "default value is observed when no Provider is mounted"
+    (let [ctx (core/create-context :default)
+          result (renderHook #(hook/use-context ctx))]
+      (is (= :default (.. result -result -current))))))
 
 (deftest element-varargs-children-test
   (testing "Element passes many children to React"

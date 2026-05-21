@@ -221,8 +221,16 @@
        :onBlur   (.-onBlur handlers)})))
 
 (defn use-field
-  "Subscribe to a single field. Returns {:value :error :onChange :onBlur}.
-  Only re-renders when this specific field's value or error changes.
+  "Subscribe to a single field. Returns a map with:
+    :value    — current value (omitted for checkboxes; see :checked)
+    :checked  — checkbox state (only when opts :type is :checkbox)
+    :error    — error string, or nil while the field is untouched
+    :dirty    — boolean: has the user changed this field since reset?
+    :onChange — DOM change handler (extracts e.target.value / .checked)
+    :onBlur   — DOM blur handler (marks the field touched)
+
+  Only re-renders when this specific field's value, error, dirty, or touched
+  state changes.
 
   opts map (optional):
     :type - :checkbox for checkbox fields (reads e.target.checked, returns :checked key)

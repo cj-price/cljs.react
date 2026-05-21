@@ -50,6 +50,19 @@
                    (nil? (component/clj->js-props m))))]
     (is (:result result) (pr-str result))))
 
+(deftest clj->js-props-skip-key-matches-dissoc
+  ;; (clj->js-props m k) must produce the same shape as (clj->js-props (dissoc m k)),
+  ;; except the empty-map → nil short-circuit is bypassed when skip-key empties the map.
+  (let [result (tc/quick-check num-tests
+                 (prop/for-all [m props-gen
+                                k gen/keyword]
+                   (let [with-skip (component/clj->js-props m k)
+                         dissoced  (component/clj->js-props (dissoc m k))
+                         norm      #(if (nil? %) {} (js->clj % :keywordize-keys true))]
+                     (= (normalize (norm with-skip))
+                        (normalize (norm dissoced))))))]
+    (is (:result result) (pr-str result))))
+
 (deftest cljs-deps-equal-inputs-stable
   ;; Equal inputs: the returned JS array must be identical (same reference) across renders.
   (let [result (tc/quick-check num-tests
