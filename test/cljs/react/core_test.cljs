@@ -258,6 +258,33 @@
           wrapped  (component/memo-forward-ref inner-fn)]
       (is (= "MemoFwdInner" (.-displayName wrapped))))))
 
+(deftest memo-forward-ref-runtime-test
+  (testing "memo-forward-ref forwards ref as RefAtom and skips rerender on equal props"
+    (let [ext-ref      (react/createRef)
+          render-count (atom 0)
+          inner-fn     (fn [{:keys [ref label]}]
+                         (swap! render-count inc)
+                         (react/createElement "input"
+                           #js {:ref (hook/react-ref ref)
+                                :placeholder label}))
+          wrapped      (component/memo-forward-ref inner-fn)
+          mk-el        (fn [label]
+                         (react/createElement wrapped
+                           #js {:cljsProps {:label label}
+                                :ref ext-ref}))
+          result       (render (mk-el "a"))]
+      (is (= 1 @render-count))
+      (is (= "INPUT" (.. ext-ref -current -tagName)))
+      (is (= "a" (.. ext-ref -current -placeholder)))
+      ;; Re-render with structurally-equal props — memo should skip.
+      (.rerender result (mk-el "a"))
+      (is (= 1 @render-count) "memo skips when cljsProps are =")
+      ;; Re-render with different props — inner fn runs.
+      (.rerender result (mk-el "b"))
+      (is (= 2 @render-count))
+      (is (= "b" (.. ext-ref -current -placeholder)))
+      (cleanup))))
+
 (deftest memo-component-js-propagates-display-name-test
   (testing "memo-component-js preserves the inner fn's displayName"
     (let [inner-fn (fn [_] (Element {:tag "i"}))
@@ -317,6 +344,23 @@
             (component/create-cljs-element Throwing {:msg "telemetry"})))
         (is (some? @captured))
         (is (= "telemetry" (.-message @captured)))
+        (cleanup)
+        (finally (set! js/console.error orig))))))
+
+(deftest error-boundary-on-error-info-arg-test
+  (testing ":on-error receives a second `info` arg with React's componentStack"
+    (let [captured (atom nil)
+          orig js/console.error]
+      (set! js/console.error (fn [& _]))
+      (try
+        (render
+          (ErrorBoundary
+            {:fallback (fn [_] (Element {:tag "span"} "x"))
+             :on-error (fn [_err info] (reset! captured info))}
+            (component/create-cljs-element Throwing {:msg "stack"})))
+        (is (some? @captured))
+        (is (some? (.-componentStack @captured))
+            "info.componentStack is part of the React 19 contract")
         (cleanup)
         (finally (set! js/console.error orig))))))
 

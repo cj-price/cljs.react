@@ -515,6 +515,18 @@
         (is (contains? (:touched state) :a))
         (is (contains? (:touched state) :b))))))
 
+(deftest set-errors-preserves-submit-error-test
+  (testing "set-errors! must not clear :submit-error (clear-errors! is the way)"
+    (let [result (render-form {:values {:a 1}})
+          handle (.. result -result -current)
+          err    (js/Error. "kaboom")]
+      (swap! (form/form-atom handle) assoc :submit-error err)
+      (act #(form/set-errors! handle {:a "bad"}))
+      (let [state (form-state handle)]
+        (is (= {:a "bad"} (:errors state)))
+        (is (identical? err (:submit-error state))
+            ":submit-error survives set-errors!")))))
+
 (deftest clear-errors-test
   (testing "clear-errors! empties :errors AND clears :submit-error"
     (let [result (render-form {:values {:a 1}})
