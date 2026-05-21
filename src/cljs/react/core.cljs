@@ -33,19 +33,19 @@
   but can be rebound to use alternative renderers like emotion/jsx."
   ([{:keys [tag] :as props}]
    (when (nil? tag) (throw (js/Error. "Element requires a :tag prop")))
-   (component/*create-element* tag (component/clj->js-props (dissoc props :tag))))
+   (component/*create-element* tag (component/clj->js-props props :tag)))
   ([{:keys [tag] :as props} c1]
    (when (nil? tag) (throw (js/Error. "Element requires a :tag prop")))
-   (component/*create-element* tag (component/clj->js-props (dissoc props :tag)) c1))
+   (component/*create-element* tag (component/clj->js-props props :tag) c1))
   ([{:keys [tag] :as props} c1 c2]
    (when (nil? tag) (throw (js/Error. "Element requires a :tag prop")))
-   (component/*create-element* tag (component/clj->js-props (dissoc props :tag)) c1 c2))
+   (component/*create-element* tag (component/clj->js-props props :tag) c1 c2))
   ([{:keys [tag] :as props} c1 c2 c3]
    (when (nil? tag) (throw (js/Error. "Element requires a :tag prop")))
-   (component/*create-element* tag (component/clj->js-props (dissoc props :tag)) c1 c2 c3))
+   (component/*create-element* tag (component/clj->js-props props :tag) c1 c2 c3))
   ([{:keys [tag] :as props} c1 c2 c3 & more]
    (when (nil? tag) (throw (js/Error. "Element requires a :tag prop")))
-   (apply component/*create-element* tag (component/clj->js-props (dissoc props :tag)) c1 c2 c3 more)))
+   (apply component/*create-element* tag (component/clj->js-props props :tag) c1 c2 c3 more)))
 
 ;; Re-export custom renderer utilities
 (def ^{:doc "Build an Element-like function bound to a custom renderer (e.g. emotion/jsx)."}

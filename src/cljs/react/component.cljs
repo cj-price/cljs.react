@@ -20,23 +20,74 @@
     (fn [type props & children] ...)"
   react/createElement)
 
+(declare props->js)
+
+(defn- convert-value
+  "Convert one prop value. Inlined branches mirror the value-conversion
+  logic shared by both the PersistentArrayMap fast path and the generic
+  reduce-kv fallback."
+  [v]
+  (cond
+    (instance? PersistentArrayMap v) (props->js v)
+    (instance? PersistentVector  v)  (to-array v)
+    (map?         v)                  (props->js v)
+    (sequential?  v)                  (to-array v)
+    :else                              v))
+
+(defn- pam->js
+  "Tight conversion path for PersistentArrayMap — reads the flat .arr field
+  directly, skipping reduce-kv closure + IFn dispatch per pair. The
+  `skip-key` argument lets callers (Element) request a key be omitted from
+  the output without first allocating a dissoc'd map; pass nil to keep all
+  keys."
+  ^js [^js am skip-key]
+  (let [arr  (.-arr am)
+        n2   (* 2 (.-cnt am))
+        out  #js {}]
+    (loop [i 0]
+      (when (< i n2)
+        (let [k (aget arr i)]
+          (when-not (keyword-identical? k skip-key)
+            (let [v  (aget arr (inc i))
+                  pn (if (keyword? k) (.-fqn k) (str k))
+                  v* (if (and (keyword-identical? k :ref)
+                              (satisfies? hook/IReactRef v))
+                       (hook/-react-ref v)
+                       (convert-value v))]
+              (aset out pn v*))))
+        (recur (+ i 2))))
+    out))
+
 (defn- props->js
   "Always produce a JS object for a CLJS map — empty maps become #js {}.
   Used recursively so nested empty maps round-trip faithfully."
+  (^js [props] (props->js props nil))
+  (^js [props skip-key]
+   (if (instance? PersistentArrayMap props)
+     (pam->js props skip-key)
+     (reduce-kv
+       (fn [^js out k v]
+         (if (keyword-identical? k skip-key)
+           out
+           (let [pn (if (keyword? k) (.-fqn k) (str k))
+                 v* (if (and (keyword-identical? k :ref)
+                             (satisfies? hook/IReactRef v))
+                      (hook/-react-ref v)
+                      (convert-value v))]
+             (aset out pn v*)
+             out)))
+       #js {}
+       props))))
+
+(defn- has-entries?
+  "Cheap non-empty check that skips the ICounted protocol for the two
+  persistent-map types that hold ~all real-world prop maps."
   [props]
-  (reduce-kv
-    (fn [^js js-obj k v]
-      (let [prop-name (if (keyword? k) (name k) (str k))]
-        (aset js-obj prop-name
-              (if (and (= prop-name "ref") (satisfies? hook/IReactRef v))
-                (hook/-react-ref v)
-                (cond
-                  (map? v) (props->js v)
-                  (sequential? v) (to-array v)
-                  :else v))))
-      js-obj)
-    #js {}
-    props))
+  (cond
+    (nil? props)                          false
+    (instance? PersistentArrayMap props) (pos? (.-cnt props))
+    (instance? PersistentHashMap  props)  (pos? (.-cnt props))
+    :else                                 (pos? (count props))))
 
 (defn clj->js-props
   "Convert ClojureScript map to JavaScript object for React props.
@@ -45,10 +96,14 @@
   Returns nil for nil or empty maps — React accepts nil props and skips
   the props-object allocation that would otherwise happen on every call.
   Nested empty maps are preserved as empty JS objects to avoid silently
-  changing the shape of values consumers read back."
-  [props]
-  (when (and props (pos? (count props)))
-    (props->js props)))
+  changing the shape of values consumers read back.
+
+  The 2-arity form drops `skip-key` from the output without first
+  allocating a dissoc'd map — used by `Element` to omit `:tag`."
+  (^js [props] (clj->js-props props nil))
+  (^js [props skip-key]
+   (when (has-entries? props)
+     (props->js props skip-key))))
 
 (defn- make-react-props
   "Build the JS props object for a React createElement call.
