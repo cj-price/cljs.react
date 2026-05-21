@@ -8,17 +8,12 @@
 ;; ============================================================================
 
 (defn format-number
-  "Format number with thousand separators"
+  "Format number with thousand separators (e.g. 100000 -> \"100,000\")."
   [n]
-  (let [str-n (str n)
-        [whole decimal] (clojure.string/split str-n #"\.")
-        reversed-chars (reverse whole)
-        groups (partition-all 3 reversed-chars)
-        reversed-groups (reverse (map #(apply str %) groups))
-        with-commas (clojure.string/join "," reversed-groups)]
-    (if decimal
-      (str with-commas "." decimal)
-      with-commas)))
+  ;; Lookahead inserts a comma between digit pairs where 3-digit groups follow
+  ;; up to end-of-number. Works for integers and decimals; only the integer
+  ;; portion gets commas.
+  (clojure.string/replace (str n) #"\B(?=(\d{3})+(?!\d))" ","))
 
 (defn format-duration
   "Convert nanoseconds to appropriate unit (ns, μs, ms)"
@@ -50,13 +45,24 @@
                     (count nums))]
     (Math/sqrt variance)))
 
+(defn calculate-median
+  "Median of a sequence (linear-ish: sorts the seq)"
+  [nums]
+  (let [sorted (vec (sort nums))
+        n (count sorted)
+        mid (quot n 2)]
+    (if (odd? n)
+      (nth sorted mid)
+      (/ (+ (nth sorted (dec mid)) (nth sorted mid)) 2))))
+
 (defn calculate-stats
-  "Calculate mean, std dev, and coefficient of variation from samples"
+  "Calculate mean, median, std dev, and coefficient of variation from samples"
   [samples]
   (let [mean (calculate-mean samples)
         std-dev (calculate-std-dev samples)
-        cv (* 100 (/ std-dev mean))]
+        cv (if (zero? mean) 0 (* 100 (/ std-dev mean)))]
     {:mean mean
+     :median (calculate-median samples)
      :std-dev std-dev
      :cv cv
      :min (apply min samples)
@@ -203,15 +209,20 @@
 (defn display-benchmark-result
   "Display a single benchmark result"
   [benchmark-id result thresholds indent]
-  (let [{:keys [name mean-ns baseline-ns overhead-pct cv]} result
+  (let [{:keys [name mean-ns baseline-ns overhead-pct cv baseline-cv
+                samples iterations min-ns max-ns]} result
         threshold-check (check-threshold benchmark-id result thresholds)
         status (:status threshold-check)]
     (println (str indent name))
+    (when (and samples iterations)
+      (println (str indent "  (n=" samples " × " (format-number iterations) " iters)")))
     (println (str indent "  cljs.react:  " (format-duration mean-ns)
-                 "  (±" (format-percentage cv) ")"))
+                 "  (±" (format-percentage cv) ")"
+                 (when (and min-ns max-ns)
+                   (str "  [" (format-duration min-ns) " – " (format-duration max-ns) "]"))))
     (when baseline-ns
       (println (str indent "  raw React:   " (format-duration baseline-ns)
-                   "  (±" (format-percentage cv) ")")))
+                   "  (±" (format-percentage (or baseline-cv 0)) ")")))
     (when overhead-pct
       (println (str indent "  Overhead:    " (format-percentage overhead-pct))))
     (println (str indent "  Status:      " (status-symbol status)))
@@ -287,3 +298,57 @@
         _ (f)
         end (now-ns)]
     (- end start)))
+
+;; ============================================================================
+;; Bench Harness
+;; ============================================================================
+;;
+;; Each measurement takes `samples` independent samples of `iterations` calls,
+;; preceded by `warmup` full-size passes for JIT settling. Per-op times are
+;; computed per-sample, then aggregated into mean / median / stddev so the CV
+;; reflects actual run-to-run variance rather than a fabricated constant.
+
+(def ^:private default-bench-opts
+  {:iterations 100000
+   :samples    10
+   :warmup     2})
+
+(defn- one-sample-per-op-ns
+  "Run f for `iterations` and return mean ns/op for this sample."
+  [iterations f]
+  (let [start (now-ns)]
+    (dotimes [_ iterations] (f))
+    (/ (- (now-ns) start) iterations)))
+
+(defn bench
+  "Take repeated samples of (f). Returns the stats map from calculate-stats
+  augmented with :samples and :iterations."
+  ([f] (bench f nil))
+  ([f opts]
+   (let [{:keys [iterations samples warmup]} (merge default-bench-opts opts)]
+     (dotimes [_ warmup]
+       (dotimes [_ iterations] (f)))
+     (assoc (calculate-stats
+              (vec (for [_ (range samples)]
+                     (one-sample-per-op-ns iterations f))))
+            :samples samples
+            :iterations iterations))))
+
+(defn bench-compare
+  "Bench `target-fn` and `baseline-fn` under the same opts. Returns a result map
+  shaped for display: :mean-ns / :cv from target, :baseline-ns / :baseline-cv
+  from baseline, plus :median-ns, :min-ns, :max-ns and :overhead-pct."
+  ([target-fn baseline-fn] (bench-compare target-fn baseline-fn nil))
+  ([target-fn baseline-fn opts]
+   (let [t (bench target-fn opts)
+         b (bench baseline-fn opts)]
+     {:mean-ns     (:mean t)
+      :median-ns   (:median t)
+      :min-ns      (:min t)
+      :max-ns      (:max t)
+      :cv          (:cv t)
+      :baseline-ns (:mean b)
+      :baseline-cv (:cv b)
+      :overhead-pct (calculate-overhead (:mean t) (:mean b))
+      :samples     (:samples t)
+      :iterations  (:iterations t)})))

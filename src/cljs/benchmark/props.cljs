@@ -33,135 +33,50 @@
 ;; Props Conversion Benchmarks
 ;; ============================================================================
 
-(defn bench-props-empty
-  "Benchmark empty props conversion"
-  []
-  (let [iterations 100000
-        _ (dotimes [_ 10] (clj->js-props props-empty))
+(defn bench-props-empty []
+  (merge {:id :props/empty
+          :category :props-conversion
+          :name "Empty Props"}
+         (utils/bench-compare
+           #(clj->js-props props-empty)
+           #(baseline/manual-props-empty)
+           {:iterations 100000})))
 
-        start-cljs (utils/now-ns)
-        _ (dotimes [_ iterations] (clj->js-props props-empty))
-        end-cljs (utils/now-ns)
-        cljs-react-ns (/ (- end-cljs start-cljs) iterations)
+(defn bench-props-shallow []
+  (merge {:id :props/shallow
+          :category :props-conversion
+          :name "Shallow Props (5 keys)"}
+         (utils/bench-compare
+           #(clj->js-props props-shallow)
+           #(baseline/manual-props-shallow)
+           {:iterations 100000})))
 
-        start-baseline (utils/now-ns)
-        _ (dotimes [_ iterations] (baseline/manual-props-empty))
-        end-baseline (utils/now-ns)
-        baseline-ns (/ (- end-baseline start-baseline) iterations)
+(defn bench-props-deep []
+  (merge {:id :props/deep
+          :category :props-conversion
+          :name "Deep Props (3 levels)"}
+         (utils/bench-compare
+           #(clj->js-props props-deep)
+           #(baseline/manual-props-deep)
+           {:iterations 50000})))
 
-        overhead (utils/calculate-overhead cljs-react-ns baseline-ns)]
+(defn bench-props-with-vectors []
+  (merge {:id :props/with-vectors
+          :category :props-conversion
+          :name "Props with Vectors"}
+         (utils/bench-compare
+           #(clj->js-props props-with-vectors)
+           #(baseline/manual-props-with-array)
+           {:iterations 50000})))
 
-    {:id :props/empty
-     :category :props-conversion
-     :name "Empty Props"
-     :mean-ns cljs-react-ns
-     :baseline-ns baseline-ns
-     :overhead-pct overhead
-     :cv 3.0}))
-
-(defn bench-props-shallow
-  "Benchmark shallow props conversion (5 keys)"
-  []
-  (let [iterations 100000
-        _ (dotimes [_ 10] (clj->js-props props-shallow))
-
-        start-cljs (utils/now-ns)
-        _ (dotimes [_ iterations] (clj->js-props props-shallow))
-        end-cljs (utils/now-ns)
-        cljs-react-ns (/ (- end-cljs start-cljs) iterations)
-
-        start-baseline (utils/now-ns)
-        _ (dotimes [_ iterations] (baseline/manual-props-shallow))
-        end-baseline (utils/now-ns)
-        baseline-ns (/ (- end-baseline start-baseline) iterations)
-
-        overhead (utils/calculate-overhead cljs-react-ns baseline-ns)]
-
-    {:id :props/shallow
-     :category :props-conversion
-     :name "Shallow Props (5 keys)"
-     :mean-ns cljs-react-ns
-     :baseline-ns baseline-ns
-     :overhead-pct overhead
-     :cv 3.5}))
-
-(defn bench-props-deep
-  "Benchmark deep nested props conversion (3 levels)"
-  []
-  (let [iterations 50000
-        _ (dotimes [_ 10] (clj->js-props props-deep))
-
-        start-cljs (utils/now-ns)
-        _ (dotimes [_ iterations] (clj->js-props props-deep))
-        end-cljs (utils/now-ns)
-        cljs-react-ns (/ (- end-cljs start-cljs) iterations)
-
-        start-baseline (utils/now-ns)
-        _ (dotimes [_ iterations] (baseline/manual-props-deep))
-        end-baseline (utils/now-ns)
-        baseline-ns (/ (- end-baseline start-baseline) iterations)
-
-        overhead (utils/calculate-overhead cljs-react-ns baseline-ns)]
-
-    {:id :props/deep
-     :category :props-conversion
-     :name "Deep Props (3 levels)"
-     :mean-ns cljs-react-ns
-     :baseline-ns baseline-ns
-     :overhead-pct overhead
-     :cv 4.0}))
-
-(defn bench-props-with-vectors
-  "Benchmark props with vectors (array conversion)"
-  []
-  (let [iterations 50000
-        _ (dotimes [_ 10] (clj->js-props props-with-vectors))
-
-        start-cljs (utils/now-ns)
-        _ (dotimes [_ iterations] (clj->js-props props-with-vectors))
-        end-cljs (utils/now-ns)
-        cljs-react-ns (/ (- end-cljs start-cljs) iterations)
-
-        start-baseline (utils/now-ns)
-        _ (dotimes [_ iterations] (baseline/manual-props-with-array))
-        end-baseline (utils/now-ns)
-        baseline-ns (/ (- end-baseline start-baseline) iterations)
-
-        overhead (utils/calculate-overhead cljs-react-ns baseline-ns)]
-
-    {:id :props/with-vectors
-     :category :props-conversion
-     :name "Props with Vectors"
-     :mean-ns cljs-react-ns
-     :baseline-ns baseline-ns
-     :overhead-pct overhead
-     :cv 4.2}))
-
-(defn bench-props-large
-  "Benchmark large props object (50 keys)"
-  []
-  (let [iterations 10000
-        _ (dotimes [_ 10] (clj->js-props props-large))
-
-        start-cljs (utils/now-ns)
-        _ (dotimes [_ iterations] (clj->js-props props-large))
-        end-cljs (utils/now-ns)
-        cljs-react-ns (/ (- end-cljs start-cljs) iterations)
-
-        start-baseline (utils/now-ns)
-        _ (dotimes [_ iterations] (baseline/manual-props-large))
-        end-baseline (utils/now-ns)
-        baseline-ns (/ (- end-baseline start-baseline) iterations)
-
-        overhead (utils/calculate-overhead cljs-react-ns baseline-ns)]
-
-    {:id :props/large
-     :category :props-conversion
-     :name "Large Props (50 keys)"
-     :mean-ns cljs-react-ns
-     :baseline-ns baseline-ns
-     :overhead-pct overhead
-     :cv 5.0}))
+(defn bench-props-large []
+  (merge {:id :props/large
+          :category :props-conversion
+          :name "Large Props (50 keys)"}
+         (utils/bench-compare
+           #(clj->js-props props-large)
+           #(baseline/manual-props-large)
+           {:iterations 10000})))
 
 ;; ============================================================================
 ;; Suite Runner
