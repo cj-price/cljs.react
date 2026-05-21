@@ -2,7 +2,7 @@
   (:require ["react" :as react]
             [cljs.react.core :refer [Element]]
             [cljs.react.hook :refer [use-state use-ref]]
-            [cljs.react.demo.util :refer [CodeAndOutput]])
+            [cljs.react.demo.util :refer [CodeAndOutput H2 Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))
 
 (defnc HelloWorld
@@ -115,8 +115,8 @@
 
 (defnc BasicsTab
   []
-  (Element {:tag "section"}
-    (Element {:tag "h2"} "🧱 Basic Components")
+  (Section
+    (H2 "🧱 Basic Components")
 
     (CodeAndOutput
      {:title "Simple Component"

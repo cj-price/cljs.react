@@ -14,7 +14,7 @@
             ["@mui/material/Chip$default"             :as MuiChip]
             [cljs.react.core :refer [Element]]
             [cljs.react.hook :refer [use-state]]
-            [cljs.react.demo.util :refer [CodeAndOutput]])
+            [cljs.react.demo.util :refer [CodeAndOutput H2 P Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))
 
 ;; ── 1. Buttons ───────────────────────────────────────────────────────────────
@@ -163,9 +163,9 @@
 ;; ── Tab root ─────────────────────────────────────────────────────────────────
 
 (defnc MUITab []
-  (Element {:tag "section"}
-    (Element {:tag "h2"} "🎨 MUI Components")
-    (Element {:tag "p" :className "subtitle"}
+  (Section
+    (H2 "🎨 MUI Components")
+    (P {:className "subtitle"}
       "Material UI v6 components used via the Element DSL — "
       "any JS React component can be used as a :tag value.")
 

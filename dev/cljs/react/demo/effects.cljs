@@ -1,8 +1,8 @@
 (ns cljs.react.demo.effects
   (:require ["react" :as react]
-            [cljs.react.core :refer [Element]]
             [cljs.react.hook :refer [use-ref use-effect use-memo use-callback use-state]]
-            [cljs.react.demo.util :refer [CodeAndOutput]])
+            [cljs.react.demo.util :refer [CodeAndOutput Div P H2 H3 H4
+                                          Button Input Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))
 
 (defnc EffectDemo
@@ -21,13 +21,11 @@
        js/undefined)
      [@count])
 
-    (Element {:tag "div" :className "demo-box"}
-      (Element {:tag "h3"} "useEffect Demo")
-      (Element {:tag "p"} "Count: " @count)
-      (Element {:tag "p" :className "effect-message"} "Message: " @message)
-      (Element {:tag "button"
-                :onClick #(swap! count inc)}
-        "Increment"))))
+    (Div {:className "demo-box"}
+      (H3 "useEffect Demo")
+      (P "Count: " @count)
+      (P {:className "effect-message"} "Message: " @message)
+      (Button {:onClick #(swap! count inc)} "Increment"))))
 
 (defnc RefDemo
   []
@@ -35,18 +33,15 @@
         [value set-value] (react/useState "")
         focus-input (fn []
                       (.focus @input-ref))]
-    (Element {:tag "div" :className "demo-box"}
-      (Element {:tag "h3"} "useRef Demo")
-      (Element {:tag "input"
-                :ref input-ref
-                :type "text"
-                :value value
-                :placeholder "Click focus button..."
-                :onChange #(set-value (-> % .-target .-value))})
-      (Element {:tag "button"
-                :onClick focus-input}
-        "Focus Input")
-      (Element {:tag "p"} "Value: " value))))
+    (Div {:className "demo-box"}
+      (H3 "useRef Demo")
+      (Input {:ref input-ref
+              :type "text"
+              :value value
+              :placeholder "Click focus button..."
+              :onChange #(set-value (-> % .-target .-value))})
+      (Button {:onClick focus-input} "Focus Input")
+      (P "Value: " value))))
 
 (defnc ExpensiveComponent
   [{:keys [count on-click]}]
@@ -60,13 +55,11 @@
                              (js/console.log "Button clicked with count:" count)
                              (on-click))
                            [count on-click])]
-    (Element {:tag "div" :className "demo-box"}
-      (Element {:tag "h3"} "useMemo & useCallback")
-      (Element {:tag "p"} "Count: " count)
-      (Element {:tag "p"} "Sum of 0 to " (dec count) ": " expensive-value)
-      (Element {:tag "button"
-                :onClick memoized-callback}
-        "Increment (check console)"))))
+    (Div {:className "demo-box"}
+      (H3 "useMemo & useCallback")
+      (P "Count: " count)
+      (P "Sum of 0 to " (dec count) ": " expensive-value)
+      (Button {:onClick memoized-callback} "Increment (check console)"))))
 
 (defnc MemoDemo
   []
@@ -105,32 +98,28 @@
   []
   (let [[is-on toggle] (use-toggle false)
         counter (use-counter 5 0 10)]
-    (Element {:tag "div" :className "demo-box"}
-      (Element {:tag "h3"} "Custom Hooks")
-      (Element {:tag "div"}
-        (Element {:tag "h4"} "useToggle Hook")
-        (Element {:tag "p"} "Status: " (if is-on "ON" "OFF"))
-        (Element {:tag "button" :onClick toggle}
-          "Toggle"))
-      (Element {:tag "div"}
-        (Element {:tag "h4"} "useCounter Hook (0-10)")
-        (Element {:tag "p"} "Count: " (:count counter))
-        (Element {:tag "div" :className "button-group"}
-          (Element {:tag "button"
-                    :onClick (:decrement counter)
-                    :disabled (= (:count counter) 0)}
+    (Div {:className "demo-box"}
+      (H3 "Custom Hooks")
+      (Div
+        (H4 "useToggle Hook")
+        (P "Status: " (if is-on "ON" "OFF"))
+        (Button {:onClick toggle} "Toggle"))
+      (Div
+        (H4 "useCounter Hook (0-10)")
+        (P "Count: " (:count counter))
+        (Div {:className "button-group"}
+          (Button {:onClick (:decrement counter)
+                   :disabled (= (:count counter) 0)}
             "Dec")
-          (Element {:tag "button" :onClick (:reset counter)}
-            "Reset")
-          (Element {:tag "button"
-                    :onClick (:increment counter)
-                    :disabled (= (:count counter) 10)}
+          (Button {:onClick (:reset counter)} "Reset")
+          (Button {:onClick (:increment counter)
+                   :disabled (= (:count counter) 10)}
             "Inc"))))))
 
 (defnc EffectsTab
   []
-  (Element {:tag "section"}
-    (Element {:tag "h2"} "⚡ Side Effects & Hooks")
+  (Section
+    (H2 "⚡ Side Effects & Hooks")
 
     (CodeAndOutput
      {:title "useEffect Hook"
@@ -139,10 +128,10 @@
 
     (CodeAndOutput
      {:title "useRef Hook"
-      :code "(defnc RefDemo\n  []\n  (let [input-ref (use-ref)\n        focus-input (fn []\n                      (.focus @input-ref))]\n    (Element {:tag \"div\"}\n      (Element {:tag \"input\"\n                :ref input-ref\n                :type \"text\"})\n      (Element {:tag \"button\"\n                :onClick focus-input}\n        \"Focus Input\"))))"}
+      :code "(defnc RefDemo\n  []\n  (let [input-ref (use-ref)\n        focus-input (fn []\n                      (.focus @input-ref))]\n    (Div\n      (Input {:ref input-ref\n              :type \"text\"})\n      (Button {:onClick focus-input}\n        \"Focus Input\"))))"}
      (RefDemo))
 
     (CodeAndOutput
      {:title "Custom Hooks"
-      :code "(defn use-toggle\n  [initial-value]\n  (let [[value set-value]\n          (react/useState initial-value)\n        toggle (use-callback\n                 (fn [] (set-value not))\n                 [])]\n    [value toggle]))\n\n(defnc CustomHookDemo\n  []\n  (let [[is-on toggle] (use-toggle false)]\n    (Element {:tag \"div\"}\n      (Element {:tag \"p\"} \"Status: \"\n        (if is-on \"ON\" \"OFF\"))\n      (Element {:tag \"button\"\n                :onClick toggle}\n        \"Toggle\"))))"}
+      :code "(defn use-toggle\n  [initial-value]\n  (let [[value set-value]\n          (react/useState initial-value)\n        toggle (use-callback\n                 (fn [] (set-value not))\n                 [])]\n    [value toggle]))\n\n(defnc CustomHookDemo\n  []\n  (let [[is-on toggle] (use-toggle false)]\n    (Div\n      (P \"Status: \"\n        (if is-on \"ON\" \"OFF\"))\n      (Button {:onClick toggle}\n        \"Toggle\"))))"}
      (CustomHooksDemo))))
