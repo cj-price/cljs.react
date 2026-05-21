@@ -78,14 +78,14 @@
 
 (defn use-counter
   "Custom hook for counter with min/max bounds"
-  [initial min max]
+  [initial lo hi]
   (let [[count set-count] (react/useState initial)
         increment (use-callback
-                   (fn [] (set-count #(min max (inc %))))
-                   [max])
+                   (fn [] (set-count #(min hi (inc %))))
+                   [hi])
         decrement (use-callback
-                   (fn [] (set-count #(cljs.core/max min (dec %))))
-                   [min])
+                   (fn [] (set-count #(max lo (dec %))))
+                   [lo])
         reset (use-callback
                (fn [] (set-count initial))
                [initial])]
