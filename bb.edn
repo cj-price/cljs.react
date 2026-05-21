@@ -11,6 +11,10 @@
            (p/shell "pnpm exec shadow-cljs compile test")
            (p/shell "node target/test.js"))}
 
+  lint
+  {:doc "Run clj-kondo over src / test / dev / hook code"
+   :task (p/shell "clj-kondo --lint src test dev .clj-kondo/hooks")}
+
   bench
   {:doc "Run performance benchmarks"
    :task (do

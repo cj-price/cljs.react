@@ -26,7 +26,7 @@ test/cljs/react/        # Tests (cljs.test + React Testing Library)
   form_test.cljs / hook_test.cljs / db_test.cljs
 
 public/index.html       # Demo entry point (port 9011)
-shadow-cljs.edn         # Build targets: :library :demo :test :benchmark
+shadow-cljs.edn         # Build targets: :demo :test :benchmark :release-demo
 bb.edn                  # Babashka task runner
 shell.nix               # Nix dev environment (Node 22, Clojure, bb, JDK 17)
 ```
@@ -40,7 +40,7 @@ Always run commands inside `nix-shell --run '...'` — enforced by global CLAUDE
 ```bash
 nix-shell --run 'bb dev'             # Start dev server → http://localhost:9011
 nix-shell --run 'bb test'            # Run tests
-nix-shell --run 'bb build'            # Build library → dist/cljs-react.js
+nix-shell --run 'bb lint'            # Lint with clj-kondo
 nix-shell --run 'bb bench'           # Run benchmarks
 nix-shell --run 'bb bench-baseline'  # Save baseline
 ```

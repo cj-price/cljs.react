@@ -25,3 +25,9 @@ pnpm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Benchmark baselines are per-machine; do not commit
+benchmark/baselines.edn
+
+# Nix / direnv
+.direnv/

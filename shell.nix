@@ -9,6 +9,7 @@ pkgs.mkShell {
     # Clojure tooling
     clojure
     babashka
+    clj-kondo
 
     # Java (required for ClojureScript compilation)
     jdk17
@@ -27,5 +28,6 @@ pkgs.mkShell {
     echo "Available tasks:"
     echo "  bb dev   - Watch and compile demo"
     echo "  bb test  - Run tests"
+    echo "  bb lint  - Run clj-kondo"
   '';
 }

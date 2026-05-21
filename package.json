@@ -1,7 +1,7 @@
 {
   "name": "cljs-react",
   "version": "0.1.0",
-  "description": "A modern React wrapper for ClojureScript",
+  "description": "Idiomatic ClojureScript bindings for React 19",
   "scripts": {
     "watch": "shadow-cljs watch demo",
     "test": "shadow-cljs compile test && node target/test.js"
@@ -11,22 +11,24 @@
     "react",
     "wrapper"
   ],
-  "author": "",
+  "author": "C.J. Price <42616742+cj-price@users.noreply.github.com>",
   "license": "MIT",
-  "dependencies": {
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/material": "^6.4.0",
+    "@testing-library/react": "^16.3.2",
+    "global-jsdom": "^27.0.0",
+    "jsdom": "^27.4.0",
     "object-assign": "^4.1.1",
     "prismjs": "^1.29.0",
     "prop-types": "^15.8.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@mui/material": "^6.4.0",
-    "@emotion/react": "^11.14.0",
-    "@emotion/styled": "^11.14.0"
-  },
-  "devDependencies": {
-    "@testing-library/react": "^16.3.2",
-    "global-jsdom": "^27.0.0",
-    "jsdom": "^27.4.0",
     "shadow-cljs": "^2.28.14"
   }
 }
