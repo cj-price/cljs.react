@@ -5,9 +5,9 @@
    ["global-jsdom/register"]
    ["@testing-library/react" :refer [renderHook act]]))
 
-;;; Test helpers — use the public FormHandle accessors (form-atom, form-opts, form-state)
+;;; Test helpers — use the public FormHandle accessors (form-atom, form-opts)
 
-(defn- form-state   [handle]   (form/form-state handle))
+(defn- form-state   [handle]   @(form/form-atom handle))
 (defn- form-values  [handle]   (:values (form-state handle)))
 (defn- form-errors  [handle]   (:errors (form-state handle)))
 (defn- form-error   [handle k] (get-in (form-state handle) [:errors k]))
@@ -137,14 +137,14 @@
       (let [b-after (.. b-result -result -current)]
         (is (= (:value b-before) (:value b-after)))))))
 
-;;; use-field with :type :checkbox
+;;; use-field with :checkbox?
 
 (deftest use-field-checkbox-test
-  (testing "use-field with {:type :checkbox} returns :checked key"
+  (testing "use-field with {:checkbox? true} returns :checked key"
     (let [handle-atom (cljs.core/atom nil)
           result (renderHook #(let [f (form/use-form {:values {:terms false}})]
                                 (reset! handle-atom f)
-                                (form/use-field f :terms {:type :checkbox})))
+                                (form/use-field f :terms {:checkbox? true})))
           field (.. result -result -current)]
       (is (false? (:checked field)))
       (is (nil? (:value field)))
@@ -493,7 +493,7 @@
       (act #(form-reset! handle {:name "Carol"}))
       (is (= "Carol" (form-value handle :name))))))
 
-;;; Direct mutators: set-values!, set-errors!, clear-errors!, set-field-touched!
+;;; Direct mutators: set-values!, set-errors!, clear-errors!, touch-field!
 
 (deftest set-values-test
   (testing "set-values! replaces :values without touching errors / flags"
@@ -548,21 +548,21 @@
       (is (= :cljs.react.form/invalid-validate-on (:type (ex-data @thrown))))
       (is (= :whenever (:got (ex-data @thrown)))))))
 
-(deftest set-field-touched-test
-  (testing "set-field-touched! adds a single key to :touched"
+(deftest touch-field-test
+  (testing "touch-field! adds a single key to :touched"
     (let [result (render-form {:values {:a 1}})
           handle (.. result -result -current)]
       (is (false? (contains? (:touched (form-state handle)) :a)))
-      (act #(form/set-field-touched! handle :a))
+      (act #(form/touch-field! handle :a))
       (is (contains? (:touched (form-state handle)) :a))))
 
-  (testing "set-field-touched! surfaces a previously-hidden error via use-field"
+  (testing "touch-field! surfaces a previously-hidden error via use-field"
     (let [{:keys [result handle-atom]} (render-field {:values {:name ""}} :name)]
       ;; field starts untouched, so an error set directly on the atom is hidden
       (act #(form-set-error! @handle-atom :name "Required"))
       (is (nil? (:error (.. result -result -current))))
       ;; touching the field surfaces it
-      (act #(form/set-field-touched! @handle-atom :name))
+      (act #(form/touch-field! @handle-atom :name))
       (is (= "Required" (:error (.. result -result -current)))))))
 
 (deftest use-field-handler-identity-test

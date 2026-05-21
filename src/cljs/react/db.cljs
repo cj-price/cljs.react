@@ -92,7 +92,8 @@
   only when the value at `path` changes.
 
   0-arity: root cursor — `@cursor` is the whole db; `reset!`/`swap!` replace
-  the root value. 1-arity: cursor scoped to a non-empty vector path.
+  the root value. 1-arity: cursor scoped to a vector path; an empty vector is
+  equivalent to the 0-arity root cursor.
 
   Path must be a vector. Non-vector paths are rejected with ex-info
   `:type ::invalid-cursor-path`."

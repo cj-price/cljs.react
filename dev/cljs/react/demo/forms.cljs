@@ -105,8 +105,8 @@
                                         (js/setTimeout #(resolve values) 800))))})
         username-fp (form/use-field f :username)
         plan-fp     (form/use-field f :plan)
-        newsletter-fp (form/use-field f :newsletter {:type :checkbox})
-        terms-fp    (form/use-field f :terms {:type :checkbox})]
+        newsletter-fp (form/use-field f :newsletter {:checkbox? true})
+        terms-fp    (form/use-field f :terms {:checkbox? true})]
     (Div {:className "w-full"}
       (Form {:className "space-y-5"
              :onSubmit (form/on-submit f)}
@@ -258,7 +258,7 @@
 
     (CodeAndOutput
      {:title "Checkboxes & Radio Buttons"
-      :code ";; Radio — use-field, reads e.target.value\n(let [plan-fp (form/use-field f :plan)]\n  (FormRadioGroup\n    (assoc plan-fp :label \"Plan\"\n      :options [{:value \"free\"  :label \"Free\"}\n                {:value \"pro\"   :label \"Pro\"}\n                {:value \"ent\"   :label \"Enterprise\"}])))\n\n;; Checkbox — use-field with {:type :checkbox}\n(let [terms-fp (form/use-field f :terms {:type :checkbox})]\n  (FormCheckboxInput\n    (assoc terms-fp :label \"Accept terms\")))"}
+      :code ";; Radio — use-field, reads e.target.value\n(let [plan-fp (form/use-field f :plan)]\n  (FormRadioGroup\n    (assoc plan-fp :label \"Plan\"\n      :options [{:value \"free\"  :label \"Free\"}\n                {:value \"pro\"   :label \"Pro\"}\n                {:value \"ent\"   :label \"Enterprise\"}])))\n\n;; Checkbox — use-field with {:checkbox? true}\n(let [terms-fp (form/use-field f :terms {:checkbox? true})]\n  (FormCheckboxInput\n    (assoc terms-fp :label \"Accept terms\")))"}
      (ProfileFormDemo))
 
     (H3 "Advanced API")

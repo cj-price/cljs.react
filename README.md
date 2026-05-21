@@ -68,8 +68,6 @@ Everything below is re-exported from `cljs.react.core` unless otherwise noted.
 | `Suspense` | `React.Suspense` element type |
 | `ErrorBoundary` | Catch render-phase errors and render a `:fallback` |
 | `create-context` | Build a React context with an optional default value |
-| `make-element-fn` | Build an Element-like function bound to a custom renderer |
-| `make-create-cljs-element-fn` | Same, for the `create-cljs-element` shape |
 
 ### Hooks
 
@@ -118,7 +116,9 @@ Everything below is re-exported from `cljs.react.core` unless otherwise noted.
 | `set-values!` | Replace the form's `:values` map |
 | `set-errors!` | Replace `:errors` (and mark each keyed field touched) |
 | `clear-errors!` | Clear all field errors and `:submit-error` |
-| `set-field-touched!` | Mark a single field touched so its error renders |
+| `touch-field!` | Mark a single field touched so its error renders |
+| `form-atom` | Raw form-state atom (testing/devtools); `@(form-atom h)` for a snapshot |
+| `form-opts` | Current `:use-form` opts map |
 
 ### DOM mount (cljs.react.dom)
 

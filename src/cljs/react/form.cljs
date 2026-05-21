@@ -29,11 +29,6 @@
   [^FormHandle h]
   @(.-opts-ref h))
 
-(defn form-state
-  "Return the current form state snapshot (equivalent to @(form-atom h))."
-  [^FormHandle h]
-  @(.-form-atom h))
-
 (defn- current-initial-values [^FormHandle h]
   (let [values (:values @(.-opts-ref h))]
     (if (satisfies? IDeref values) @values values)))
@@ -66,15 +61,15 @@
   [^FormHandle h]
   (swap! (.-form-atom h) assoc :errors {} :submit-error nil))
 
-(defn set-field-touched!
+(defn touch-field!
   "Mark a field as touched so its error becomes visible to `use-field`."
   [^FormHandle h field-key]
   (swap! (.-form-atom h) update :touched conj field-key))
 
 (defn- field-snap [state field-key]
-  {:value (get-in state [:values field-key])
+  {:value (get (:values state) field-key)
    :error (when (contains? (:touched state) field-key)
-            (get-in state [:errors field-key]))
+            (get (:errors state) field-key))
    :dirty (contains? (:dirty state) field-key)})
 
 (defn- touched-error-changed? [old-s new-s field-key]
@@ -82,8 +77,8 @@
         t-new (contains? (:touched new-s) field-key)]
     (or (not= t-old t-new)
         (and t-new
-             (not= (get-in old-s [:errors field-key])
-                   (get-in new-s [:errors field-key]))))))
+             (not= (get (:errors old-s) field-key)
+                   (get (:errors new-s) field-key))))))
 
 (defn- field-diff? [old-s new-s field-key]
   ;; Fast path: same state identity → nothing changed for this field either.
@@ -179,14 +174,15 @@
                            (pr-str validate-on) ")")
                       {:type ::invalid-validate-on :got validate-on}))))
   (let [values     (:values opts)
-        initial    (if (satisfies? IDeref values) @values values)
         handle-ref (hook/use-ref nil)]
-    ;; Initialize once
+    ;; Initialize once. `initial` is computed inside the guard so the
+    ;; `@values` deref of a watchable doesn't run on every render.
     (when (nil? @handle-ref)
-      (reset! handle-ref
-              (FormHandle. (atom (make-state initial))
-                           (atom opts)
-                           (atom {}))))
+      (let [initial (if (satisfies? IDeref values) @values values)]
+        (reset! handle-ref
+                (FormHandle. (atom (make-state initial))
+                             (atom opts)
+                             (atom {})))))
     ;; Keep opts-ref current every render — skip the reset! when opts is stable
     ;; so unchanged-render paths avoid an atom write + watch fan-out.
     (let [opts-ref (.-opts-ref ^FormHandle @handle-ref)]
@@ -242,7 +238,7 @@
 (defn use-field
   "Subscribe to a single field. Returns a map with:
     :value    — current value (omitted for checkboxes; see :checked)
-    :checked  — checkbox state (only when opts :type is :checkbox)
+    :checked  — checkbox state (only when opts :checkbox? is true)
     :error    — error string, or nil while the field is untouched
     :dirty    — boolean: has the user changed this field since reset?
     :onChange — DOM change handler (extracts e.target.value / .checked)
@@ -252,16 +248,16 @@
   state changes.
 
   opts map (optional):
-    :type - :checkbox for checkbox fields (reads e.target.checked, returns :checked key)
+    :checkbox? - true for checkbox fields (reads e.target.checked, returns :checked key)
 
-  Radio groups: there is no dedicated :type :radio — use the field as a string
-  and set each input's :checked to (= field-value option) and :value to option,
-  e.g. (Element {:tag \"input\" :type \"radio\" :name \"color\" :value \"red\"
-                :checked (= (:value field) \"red\") :onChange (:onChange field)})."
+  Radio groups: no dedicated mode — use the field as a string and set each
+  input's :checked to (= field-value option) and :value to option, e.g.
+  (Element {:tag \"input\" :type \"radio\" :name \"color\" :value \"red\"
+            :checked (= (:value field) \"red\") :onChange (:onChange field)})."
   ([^FormHandle handle field-key]
    (use-field* handle field-key nil))
   ([^FormHandle handle field-key opts]
-   (use-field* handle field-key {:checkbox? (= :checkbox (:type opts))})))
+   (use-field* handle field-key {:checkbox? (boolean (:checkbox? opts))})))
 
 (defn- meta-diff? [old new]
   (or (not= (:errors old) (:errors new))

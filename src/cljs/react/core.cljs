@@ -52,12 +52,6 @@
   ([{:keys [tag] :as props} c1 c2 c3 & more]
    (apply component/*create-element* tag (element-props tag props) c1 c2 c3 more)))
 
-;; Re-export custom renderer utilities
-(def ^{:doc "Build an Element-like function bound to a custom renderer (e.g. emotion/jsx)."}
-  make-element-fn component/make-element-fn)
-(def ^{:doc "Build a create-cljs-element-like function bound to a custom renderer."}
-  make-create-cljs-element-fn component/make-create-cljs-element-fn)
-
 ;; Re-export ref utilities
 (def ^{:doc "Extract the raw React ref object from a RefAtom; use when passing refs to DOM elements or JS components."}
   react-ref hook/react-ref)
@@ -136,13 +130,11 @@
 (def ^{:doc "Clear all field errors and any :submit-error."}
   clear-errors! form/clear-errors!)
 (def ^{:doc "Mark a field as touched so its error becomes visible to use-field."}
-  set-field-touched! form/set-field-touched!)
+  touch-field! form/touch-field!)
 
 ;; Form escape hatches — for testing, devtools, or custom integrations.
 ;; Most app code should stick to use-form / use-field / use-form-meta.
-(def ^{:doc "Return the raw form-state atom for direct inspection/mutation. Advanced: prefer use-form-meta or use-field for reactive reads."}
+(def ^{:doc "Return the raw form-state atom for direct inspection/mutation. Advanced: prefer use-form-meta or use-field for reactive reads. Dereference for a snapshot."}
   form-atom form/form-atom)
 (def ^{:doc "Return the current :use-form opts map (always fresh)."}
   form-opts form/form-opts)
-(def ^{:doc "Return the current form state snapshot (equivalent to @(form-atom h))."}
-  form-state form/form-state)

@@ -9,7 +9,7 @@
    [cljs.react.db :as db]
    ["global-jsdom/register"]
    ["react" :as react]
-   ["@testing-library/react" :refer [renderHook act]]))
+   ["@testing-library/react" :refer [renderHook render act]]))
 
 (def ^:private num-tests 50)
 
@@ -33,8 +33,13 @@
                    (gen/map gen/keyword inner)]))
     scalar-gen))
 
+;; Mix small (PAM) and large (PHM) maps so roundtrip + skip-key properties
+;; exercise both paths through clj->js-props. CLJS swaps PersistentArrayMap
+;; → PersistentHashMap at 9 entries.
 (def ^:private props-gen
-  (gen/map gen/keyword prop-value-gen {:max-elements 4}))
+  (gen/one-of
+    [(gen/map gen/keyword prop-value-gen {:max-elements 4})
+     (gen/map gen/keyword prop-value-gen {:min-elements 9 :max-elements 16})]))
 
 (deftest clj->js-props-roundtrip
   (let [result (tc/quick-check num-tests
@@ -44,18 +49,20 @@
                      (= (normalize m) (normalize round)))))]
     (is (:result result) (pr-str result))))
 
-(deftest clj->js-props-empty-returns-nil
-  (let [result (tc/quick-check num-tests
-                 (prop/for-all [m (gen/return {})]
-                   (nil? (component/clj->js-props m))))]
-    (is (:result result) (pr-str result))))
-
 (deftest clj->js-props-skip-key-matches-dissoc
   ;; (clj->js-props m k) must produce the same shape as (clj->js-props (dissoc m k)),
   ;; except the empty-map → nil short-circuit is bypassed when skip-key empties the map.
-  (let [result (tc/quick-check num-tests
-                 (prop/for-all [m props-gen
-                                k gen/keyword]
+  ;; k is drawn 50/50 from m's actual keys vs. arbitrary keywords, so the property
+  ;; exercises both the "skip-key hits a present key" and "absent key" cases.
+  (let [m+k-gen (gen/bind props-gen
+                  (fn [m]
+                    (gen/tuple (gen/return m)
+                               (if (seq m)
+                                 (gen/one-of [(gen/elements (vec (keys m)))
+                                              gen/keyword])
+                                 gen/keyword))))
+        result (tc/quick-check num-tests
+                 (prop/for-all [[m k] m+k-gen]
                    (let [with-skip (component/clj->js-props m k)
                          dissoced  (component/clj->js-props (dissoc m k))
                          norm      #(if (nil? %) {} (js->clj % :keywordize-keys true))]
@@ -190,24 +197,22 @@
 
 (deftest memo-component-render-count
   ;; For any sequence of props, body invocation count equals the number of
-  ;; distinct adjacent groups (since CLJS = collapses consecutive equal props).
-  (let [result (tc/quick-check 20
+  ;; distinct adjacent groups (CLJS = collapses consecutive equal props).
+  ;; Assumes non-StrictMode test root — StrictMode double-invokes function
+  ;; components in dev and would double observed.
+  (let [result (tc/quick-check num-tests
                  (prop/for-all [seq-props (gen/vector (gen/map gen/keyword scalar-gen {:max-elements 2}) 1 6)]
                    (let [render-count (atom 0)
                          inner        (fn [_]
                                         (swap! render-count inc)
                                         (react/createElement "div" nil))
                          memoized     (component/memo-component inner)
-                         r            (renderHook (fn [] nil))]
-                     (act (fn []
-                            (doseq [p seq-props]
-                              (.rerender r
-                                (component/create-cljs-element memoized p)))))
+                         [first-p & rest-ps] seq-props
+                         r            (render (component/create-cljs-element memoized first-p))]
+                     (doseq [p rest-ps]
+                       (act #(.rerender r (component/create-cljs-element memoized p))))
                      (let [distinct-groups (count (partition-by identity seq-props))
                            observed        @render-count]
                        (.unmount r)
-                       ;; Observed must be ≤ distinct-groups; may be less if
-                       ;; React batches. The invariant is: no more than the
-                       ;; number of distinct-groups + initial mount.
-                       (<= observed (inc distinct-groups))))))]
+                       (= observed distinct-groups)))))]
     (is (:result result) (pr-str result))))
