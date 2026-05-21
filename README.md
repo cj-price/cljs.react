@@ -184,15 +184,19 @@ once the input has mounted.
 
 ### `:key` on function components
 
-React's reconciler reads `key` off the element's JS props, not the `cljsProps`
-wrapper that `defnc` components use. `Element` hoists `:key` automatically, but
-if you call a `defnc` component directly (`(MyItem {:key id})`), the key is
-invisible to React. For keyed lists use `Element` at the call site:
+`defnc` components wrap props in a `cljsProps` JS object, which would normally
+hide `:key` from React's reconciler. To make keyed lists "just work", `defnc`
+hoists `:key` out of the CLJS props map and onto the top-level JS props object,
+so calling a component directly is enough:
 
 ```clojure
 (for [item items]
-  (Element {:tag MyItem :key (:id item) :item item}))
+  (MyItem {:key (:id item) :item item}))
 ```
+
+Note: `Element` is for DOM tags (strings) and plain JS React components — it
+passes props as flat JS objects. For `defnc` components, call them directly
+as shown above so they receive their `cljsProps` wrapper.
 
 ## Development
 
