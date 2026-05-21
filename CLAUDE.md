@@ -62,8 +62,8 @@ nix-shell --run 'bb bench-baseline'  # Save baseline
   (swap! s inc))
 
 ;; Global state
-(use-db)                    ; full db atom
-(use-cursor [:user :name])  ; Cursor for nested path
+(use-db)                ; root Cursor — @ for whole db; reset!/swap! replace root
+(use-db [:user :name])  ; Cursor scoped to a path
 
 ;; Forms
 (use-form {:fields {...} :on-submit f})  ; returns FormHandle
@@ -75,7 +75,7 @@ use-effect   use-memo   use-callback   use-ref   use-atom
 ## Architecture Notes
 
 - `use-state` returns a StateAtom; deref / reset! / swap! work natively
-- `use-cursor` returns a Cursor for scoped reads/writes into global state
+- `use-db` returns a Cursor for reads/writes into global state (root 0-arity or path 1-arity)
 - `defnc` compiles to a React function component; use `memo-component` for memoization
 - Forms use per-field subscriptions — only affected fields re-render on change
 - `*create-element*` dynamic var allows custom renderer injection
@@ -85,7 +85,7 @@ use-effect   use-memo   use-callback   use-ref   use-atom
 - **CamelCase** — React element/component constructors (`Element`, `Fragment`,
   `Suspense`, `DBProvider`, user-defined `defnc` components).
 - **kebab-case** — regular functions, hooks, and utilities (`use-state`,
-  `use-cursor`, `on-submit`, `clj->js-props`, `forward-ref`).
+  `use-db`, `on-submit`, `clj->js-props`, `forward-ref`).
 
 When exposing new symbols: if the symbol returns a React element or is intended
 to be invoked in element-creation position, use CamelCase. Otherwise

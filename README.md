@@ -103,9 +103,8 @@ Everything below is re-exported from `cljs.react.core` unless otherwise noted.
 | Symbol | Purpose |
 | --- | --- |
 | `DBProvider` | Install an atom at the root of the tree |
-| `use-db` | Subscribe to the whole db atom |
+| `use-db` | Subscribe to the db; returns a Cursor (deref / reset! / swap!). 0-arity is the root cursor; 1-arity takes a vector path. |
 | `use-db-atom` | Return the raw db atom (no subscription) |
-| `use-cursor` | Subscribe to a path; returns a Cursor (deref / reset! / swap!) |
 
 ### Forms
 
@@ -140,7 +139,7 @@ element tree must match the server-rendered markup.
 - **CamelCase** — React element/component constructors: `Element`, `Fragment`,
   `Suspense`, `DBProvider`, `ErrorBoundary`, `defnc`-defined components.
 - **kebab-case** — everything else: hooks, utilities, handler builders
-  (`use-state`, `use-cursor`, `on-submit`, `clj->js-props`, `forward-ref`).
+  (`use-state`, `use-db`, `on-submit`, `clj->js-props`, `forward-ref`).
 
 Rule of thumb: if a symbol returns a React element or is intended to sit in
 element-creation position, it is CamelCase. Otherwise it is kebab-case.

@@ -113,12 +113,10 @@
 ;; Re-export db utilities
 (def ^{:doc "Provide a database context for child components. Usage: (DBProvider {:initial-value {...}} child1 child2 ...)"}
   DBProvider db/DBProvider)
-(def ^{:doc "Subscribe to the entire db. Returns the current value and re-renders on any change."}
+(def ^{:doc "Subscribe to the db. Returns a Cursor (deref / reset! / swap!) that re-renders only when the value at path changes. 0-arity is the root cursor; 1-arity takes a vector path."}
   use-db db/use-db)
-(def ^{:doc "Return the raw db atom from context. Does not subscribe — use use-db or use-cursor for reactive reads."}
+(def ^{:doc "Return the raw db atom from context. Does not subscribe — use use-db for reactive reads."}
   use-db-atom db/use-db-atom)
-(def ^{:doc "Subscribe to a path in the db. Returns a Cursor that can be deref'd / reset! / swap!. Only re-renders when the value at path changes."}
-  use-cursor db/use-cursor)
 
 ;; Re-export form utilities
 (def ^{:doc "Create a form handle. opts: {:values :validate :on-submit :validate-on}. See cljs.react.form/use-form for details."}

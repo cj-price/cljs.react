@@ -1,7 +1,7 @@
 (ns cljs.react.db
   "Global state via a single Clojure atom held in React context. `DBProvider`
-  installs the atom; `use-db`/`use-db-atom`/`use-cursor` subscribe to all or
-  part of it with per-path fan-out.
+  installs the atom; `use-db`/`use-db-atom` subscribe to all or part of it
+  with per-path fan-out.
 
   Re-exported from `cljs.react.core`; prefer that namespace in consumer code."
   (:require
@@ -15,18 +15,20 @@
         path (.-path cursor)]
     (swap! (.-atom cursor)
            (fn [s]
-             (let [nv (update-fn (get-in s path))]
+             (let [nv (update-fn (if (seq path) (get-in s path) s))]
                (vreset! new-val nv)
-               (assoc-in s path nv))))
+               (if (seq path) (assoc-in s path nv) nv))))
     @new-val))
 
 (deftype ^:no-doc Cursor [atom path]
   IDeref
-  (-deref [_] (get-in @atom path))
+  (-deref [_] (if (seq path) (get-in @atom path) @atom))
 
   IReset
   (-reset! [_ v]
-    (swap! atom assoc-in path v)
+    (if (seq path)
+      (swap! atom assoc-in path v)
+      (reset! atom v))
     v)
 
   ISwap
@@ -43,8 +45,9 @@
   (-add-watch [cursor k f]
     (add-watch (.-atom cursor) [::cursor k cursor]
       (fn [_ _ old-state new-state]
-        (let [old-val (get-in old-state (.-path cursor))
-              new-val (get-in new-state (.-path cursor))]
+        (let [path    (.-path cursor)
+              old-val (if (seq path) (get-in old-state path) old-state)
+              new-val (if (seq path) (get-in new-state path) new-state)]
           (when (not= old-val new-val)
             (f [::cursor k cursor] cursor old-val new-val))))))
   (-remove-watch [cursor k]
@@ -81,33 +84,34 @@
   []
   (or (hook/use-context db-context)
       (throw (ex-info
-               "use-db / use-db-atom / use-cursor called outside a DBProvider — wrap your tree in (DBProvider {:initial-value ...} ...)"
+               "use-db / use-db-atom called outside a DBProvider — wrap your tree in (DBProvider {:initial-value ...} ...)"
                {:type ::no-provider}))))
 
 (defn use-db
-  "Subscribe to the entire db. Returns the current value."
-  []
-  (hook/use-atom (use-db-atom)))
+  "Subscribe to the db. Returns a Cursor (deref / reset! / swap!) that re-renders
+  only when the value at `path` changes.
 
-(defn use-cursor
-  "Subscribe to a path in the db. Returns a cursor that can be deref'd and updated.
-  Only re-renders when the value at path changes.
+  0-arity: root cursor — `@cursor` is the whole db; `reset!`/`swap!` replace
+  the root value. 1-arity: cursor scoped to a non-empty vector path.
 
-  `path` must be a non-empty vector. An empty or non-vector path is rejected with
-  an ex-info `:type ::invalid-cursor-path`; clobbering the whole db via a Cursor
-  is intentionally disallowed (use `use-db-atom` if you need root-level writes)."
-  [path]
-  (when-not (and (vector? path) (seq path))
-    (throw (ex-info (str "use-cursor: path must be a non-empty vector (got "
-                         (pr-str path) ")")
-                    {:type ::invalid-cursor-path :got path})))
-  (let [atom (use-db-atom)]
-    ;; use-selector is called for its subscription side-effect: it wires the
-    ;; component up to re-render when the value at `path` changes. We discard
-    ;; the returned snapshot — callers read through the Cursor instead, which
-    ;; gives them swap!/reset! and stays the same identity across renders.
-    (hook/use-selector atom
-                       (fn [o n] (not= (get-in o path) (get-in n path)))
-                       (fn [s] (get-in s path))
-                       [path])
-    (hook/use-memo (fn [] (Cursor. atom path)) [path])))
+  Path must be a vector. Non-vector paths are rejected with ex-info
+  `:type ::invalid-cursor-path`."
+  ([] (use-db []))
+  ([path]
+   (when-not (vector? path)
+     (throw (ex-info (str "use-db: path must be a vector (got "
+                          (pr-str path) ")")
+                     {:type ::invalid-cursor-path :got path})))
+   (let [atom (use-db-atom)]
+     ;; use-selector is called for its subscription side-effect: it wires the
+     ;; component up to re-render when the value at `path` changes. We discard
+     ;; the returned snapshot — callers read through the Cursor instead, which
+     ;; gives them swap!/reset! and stays the same identity across renders.
+     (hook/use-selector atom
+                        (fn [o n]
+                          (if (seq path)
+                            (not= (get-in o path) (get-in n path))
+                            (not= o n)))
+                        (fn [s] (if (seq path) (get-in s path) s))
+                        [path])
+     (hook/use-memo (fn [] (Cursor. atom path)) [path]))))
