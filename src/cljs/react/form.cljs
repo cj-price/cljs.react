@@ -177,27 +177,31 @@
     (let [opts-ref (.-opts-ref ^FormHandle @handle-ref)]
       (when-not (identical? @opts-ref opts)
         (reset! opts-ref opts)))
-    ;; Reactive values: watch if :values is watchable
-    (hook/use-effect
-      (fn []
-        (if (satisfies? IWatchable values)
-          (let [form-atom (.-form-atom ^FormHandle @handle-ref)
-                key       (gensym "form-values")]
-            (add-watch values key
-              (fn [_ _ _ new-vals]
-                (swap! form-atom
-                       (fn [s]
-                         (let [dirty (:dirty s)]
-                           (update s :values
-                                   (fn [current]
-                                     (reduce-kv
-                                       (fn [acc k v]
-                                         (if (contains? dirty k) acc (assoc acc k v)))
-                                       current
-                                       new-vals))))))))
-            #(remove-watch values key))
-          js/undefined))
-      [values])
+    ;; Reactive values: watch if :values is watchable.
+    ;; Deps collapse to `nil` when :values is a plain map so re-renders with a
+    ;; freshly-allocated map literal don't churn cljs-deps structural compare
+    ;; or fire the effect cleanup/setup pair.
+    (let [watchable-values (when (satisfies? IWatchable values) values)]
+      (hook/use-effect
+        (fn []
+          (if watchable-values
+            (let [form-atom (.-form-atom ^FormHandle @handle-ref)
+                  key       (gensym "form-values")]
+              (add-watch watchable-values key
+                (fn [_ _ _ new-vals]
+                  (swap! form-atom
+                         (fn [s]
+                           (let [dirty (:dirty s)]
+                             (update s :values
+                                     (fn [current]
+                                       (reduce-kv
+                                         (fn [acc k v]
+                                           (if (contains? dirty k) acc (assoc acc k v)))
+                                         current
+                                         new-vals))))))))
+              #(remove-watch watchable-values key))
+            js/undefined))
+        [watchable-values]))
     @handle-ref))
 
 (defn- use-field*

@@ -132,7 +132,10 @@
   `deps` controls when the subscription identity changes — pass [] for a
   permanent subscription, or a vector of selector parameters otherwise."
   [source diff? select deps]
-  (let [snap-ref     (use-ref nil)
+  ;; Cache holds the last (source-state, projected-snapshot) pair. React calls
+  ;; getSnapshot multiple times per render (commit + tearing checks). If the
+  ;; source-state identity hasn't changed, skip select + structural-= entirely.
+  (let [cache-ref    (use-ref nil)
         subscribe    (use-callback
                        (fn [callback]
                          (let [key (gensym "use-selector")]
@@ -143,11 +146,17 @@
                        deps)
         get-snapshot (use-callback
                        (fn []
-                         (let [new-snap (select @source)
-                               cached   @snap-ref]
-                           (if (= new-snap cached)
-                             cached
-                             (do (reset! snap-ref new-snap) new-snap))))
+                         (let [state  @source
+                               ^js cached @cache-ref]
+                           (if (and cached (identical? state (.-state cached)))
+                             (.-snap cached)
+                             (let [new-snap (select state)]
+                               (if (and cached (= new-snap (.-snap cached)))
+                                 (do (set! (.-state cached) state)
+                                     (.-snap cached))
+                                 (do (reset! cache-ref
+                                             #js {:state state :snap new-snap})
+                                     new-snap))))))
                        deps)]
     (use-sync-external-store subscribe get-snapshot)))
 
