@@ -149,6 +149,36 @@
       (is (= 2 (.. kids -children -length)))
       (cleanup))))
 
+(def ^:private captured-children (atom :unset))
+
+(defnc ChildrenCaptureComp
+  [{:keys [children]}]
+  (reset! captured-children children)
+  (Element {:tag "div"}))
+
+(deftest defnc-children-shape-test
+  (testing ":children is a CLJS seq regardless of count"
+    (testing "0 children → nil"
+      (reset! captured-children :unset)
+      (render (ChildrenCaptureComp))
+      (is (nil? @captured-children))
+      (cleanup))
+    (testing "1 child → 1-element seq"
+      (reset! captured-children :unset)
+      (render (ChildrenCaptureComp nil (Element {:tag "span"} "solo")))
+      (is (seq? @captured-children))
+      (is (= 1 (count @captured-children)))
+      (cleanup))
+    (testing "2+ children → seq of all children"
+      (reset! captured-children :unset)
+      (render (ChildrenCaptureComp nil
+                (Element {:tag "span"} "a")
+                (Element {:tag "span"} "b")
+                (Element {:tag "span"} "c")))
+      (is (seq? @captured-children))
+      (is (= 3 (count @captured-children)))
+      (cleanup))))
+
 (def ^:private render-count (atom 0))
 
 (defnc CountedComp

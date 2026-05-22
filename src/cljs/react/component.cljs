@@ -156,14 +156,24 @@
   ([type props c1 c2 c3 & more]
    (apply *create-element* type (make-react-props type props) c1 c2 c3 more)))
 
+(defn- normalize-children
+  "React stores children as undefined for 0, the bare child for 1, and a JS
+  array for 2+. Project that onto a CLJS seq (or nil) so component bodies can
+  iterate or pass through uniformly."
+  [children]
+  (cond
+    (nil? children)   nil
+    (array? children) (seq children)
+    :else             (cons children nil)))
+
 (defn- unwrap-cljs-props
   "Read the CLJS props map out of the JS wrapper object, merging :children in
-  when React has attached them. Shared by memo-component, forward-ref, and
-  memo-forward-ref."
+  as a CLJS seq (nil when there are none). Shared by memo-component,
+  forward-ref, and memo-forward-ref."
   [js-props]
   (let [cljs-props (gobj/get js-props "cljsProps")
-        children (gobj/get js-props "children")]
-    (if (undefined? children)
+        children   (normalize-children (gobj/get js-props "children"))]
+    (if (nil? children)
       cljs-props
       (assoc cljs-props :children children))))
 

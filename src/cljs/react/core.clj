@@ -22,6 +22,10 @@
     :as-element   Memoized via React.memo with raw JS props instead of the
                   cljsProps wrapper. Use when the component is called from a
                   JS-side React tree that expects a plain JS props object.
+                  Note: children arrive as React's raw tri-shape
+                  (undefined / single / JS array) on this path — the seq
+                  normalization applied to default and :forward-ref does not
+                  run here.
 
     :forward-ref  Wrap with React.forwardRef. The forwarded ref arrives in the
                   CLJS props map under :ref as a RefAtom — deref for the raw

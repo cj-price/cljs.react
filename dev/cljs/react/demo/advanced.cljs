@@ -1,21 +1,25 @@
 (ns cljs.react.demo.advanced
   (:require [clojure.string :as string]
             [cljs.react.core :refer [use-ref use-state]]
-            [cljs.react.demo.util :refer [CodeAndOutput Div P H2 H3 H4
+            [cljs.react.demo.util :refer [CodeAndOutput Div P H2
                                           Span Strong Button Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))
 
 (defnc NestedComponent
   [{:keys [level message]}]
-  (Div {:className "nested-component"}
-    (H4 "Level " level)
-    (P message)))
+  (Div {:className "flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg"}
+    (Div {:className "flex items-center justify-center w-8 h-8 rounded-full bg-koi-orange/10 text-koi-orange font-bold text-sm flex-shrink-0"}
+      level)
+    (Div
+      (Div {:className "text-xs uppercase tracking-wide text-gray-500"}
+        "Level " level)
+      (Div {:className "text-sm text-gray-800 mt-0.5"} message))))
 
 (defnc PropsDemo
   []
-  (Div {:className "demo-box"}
-    (H3 "Props & Data Flow")
-    (P "Components receive immutable CLJS data structures as props:")
+  (Div {:className "w-full space-y-2"}
+    (P {:className "text-sm text-gray-600 mb-3"}
+      "Components receive immutable CLJS data structures as props:")
     (NestedComponent {:level 1 :message "First nested component"})
     (NestedComponent {:level 2 :message "Second nested component"})
     (NestedComponent {:level 3 :message "Third nested component"})))
@@ -26,50 +30,54 @@
 
 (defnc UserCard
   [{:keys [name email role active]}]
-  (Div {:className (str "user-card" (when-not active " inactive"))}
-    (Div {:className "user-header"}
-      (H4 name)
+  (Div {:className (str "p-4 bg-white border-2 rounded-lg transition-all hover:border-koi-orange/60 hover:shadow-md "
+                        (if active "border-gray-200" "border-gray-200 opacity-70"))}
+    (Div {:className "flex items-center justify-between gap-2 mb-2"}
+      (Span {:className "font-semibold text-gray-900"} name)
       (Badge {:text (string/upper-case role) :type role}))
-    (P {:className "user-email"} email)
-    (P {:className "user-status"}
-      (if active "✓ Active" "○ Inactive"))))
+    (P {:className "text-sm text-gray-600 break-all"} email)
+    (P {:className (str "text-xs mt-2 font-medium "
+                        (if active "text-emerald-600" "text-gray-400"))}
+      (if active "● Active" "○ Inactive"))))
 
 (defnc CompositionDemo
   []
   (let [users [{:id 1 :name "Alice Johnson" :email "alice@example.com" :role "admin" :active true}
                {:id 2 :name "Bob Smith" :email "bob@example.com" :role "user" :active true}
                {:id 3 :name "Carol White" :email "carol@example.com" :role "moderator" :active false}]]
-    (Div {:className "demo-box"}
-      (H3 "Component Composition")
-      (Div {:className "user-grid"}
-        (for [user users]
-          (Div {:key (:id user)}
-            (UserCard user)))))))
+    (Div {:className "w-full grid grid-cols-1 sm:grid-cols-2 gap-3"}
+      (for [user users]
+        (Div {:key (:id user)}
+          (UserCard user))))))
 
 (defnc RenderCounter
   [{:keys [name]}]
   (let [render-count (use-ref 0)]
     (swap! render-count inc)
-    (Div {:className "render-counter"}
-      (Strong name)
-      (Span " - Renders: " @render-count))))
+    (Div {:className "flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg"}
+      (Strong {:className "text-sm text-gray-800"} name)
+      (Span {:className "text-xs font-mono px-2 py-0.5 bg-orange-50 text-koi-orange rounded-full border border-orange-100"}
+        "renders: " @render-count))))
 
 (defnc MemoizationDemo
   []
   (let [count (use-state 0)
         unrelated (use-state "")]
-    (Div {:className "demo-box"}
-      (H3 "Memoization Behavior")
-      (P "Components are memoized with React.memo using CLJS equality")
-      (Div {:className "button-group"}
-        (Button {:onClick #(swap! count inc)} "Increment Count")
-        (Button {:onClick #(reset! unrelated (str (random-uuid)))}
+    (Div {:className "w-full space-y-3"}
+      (P {:className "text-sm text-gray-600"}
+        "Components are memoized with React.memo using CLJS equality.")
+      (Div {:className "flex flex-wrap gap-2"}
+        (Button {:className "flex-1 min-w-[160px] px-3 py-2 bg-koi-orange text-white rounded-lg font-medium text-sm shadow hover:bg-orange-600 transition-colors"
+                 :onClick #(swap! count inc)}
+          "Increment Count")
+        (Button {:className "flex-1 min-w-[160px] px-3 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium text-sm hover:bg-gray-300 transition-colors"
+                 :onClick #(reset! unrelated (str (random-uuid)))}
           "Update Unrelated State"))
-      (Div {:className "memo-test"}
+      (Div {:className "space-y-2"}
         (RenderCounter {:name "Parent Component"})
-        (RenderCounter {:name (str "Child with count=" @count)})
-        (P {:className "hint"}
-          "Try clicking 'Update Unrelated State' - child shouldn't re-render!")))))
+        (RenderCounter {:name (str "Child with count=" @count)}))
+      (P {:className "text-xs text-gray-500 italic"}
+        "Try 'Update Unrelated State' — the child shouldn't re-render."))))
 
 (defnc AdvancedTab
   []

@@ -1,6 +1,6 @@
 (ns cljs.react.demo.state
   (:require [cljs.react.core :refer [use-state]]
-            [cljs.react.demo.util :refer [CodeAndOutput Div P H2 H3 Span
+            [cljs.react.demo.util :refer [CodeAndOutput Div P H2 Span
                                           Button Input Section Ul Li]])
   (:require-macros [cljs.react.core :refer [defnc]]))
 
@@ -60,27 +60,43 @@
                                            ts))))
         remove-todo (fn [id]
                       (swap! todos (fn [ts]
-                                     (filterv (fn [todo] (not= (:id todo) id)) ts))))]
-    (Div {:className "demo-box"}
-      (H3 "Todo List (" (count @todos) " items)")
-      (Div {:className "input-group"}
+                                     (filterv (fn [todo] (not= (:id todo) id)) ts))))
+        remaining (count (remove :done @todos))]
+    (Div {:className "w-full space-y-3"}
+      (Div {:className "flex items-center justify-between"}
+        (Span {:className "text-sm font-semibold text-gray-700"} "Tasks")
+        (Span {:className "text-xs font-mono px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full"}
+          remaining " of " (count @todos) " left"))
+      (Div {:className "flex gap-2"}
         (Input {:type "text"
                 :value @input
-                :placeholder "Add a todo..."
+                :placeholder "Add a todo…"
+                :className "flex-1 min-w-0 px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-koi-orange focus:ring-2 focus:ring-koi-orange/20 outline-none transition-all text-sm"
                 :onKeyPress #(when (= (.-key %) "Enter") (add-todo))
                 :onChange #(reset! input (-> % .-target .-value))})
-        (Button {:onClick add-todo} "Add"))
-      (Ul {:className "todo-list"}
-        (for [todo @todos]
-          (Li {:key (str (:id todo))
-               :className (if (:done todo) "done" "")}
-            (Input {:type "checkbox"
-                    :checked (:done todo)
-                    :onChange #(toggle-todo (:id todo))})
-            (Span (:text todo))
-            (Button {:className "delete-btn"
-                     :onClick #(remove-todo (:id todo))}
-              "×")))))))
+        (Button {:className "px-4 py-2 bg-koi-orange text-white rounded-lg font-medium shadow hover:bg-orange-600 transition-colors text-sm"
+                 :onClick add-todo}
+          "Add"))
+      (if (empty? @todos)
+        (Div {:className "py-6 text-center text-sm text-gray-400 italic border-2 border-dashed border-gray-200 rounded-lg"}
+          "No tasks yet — add one above.")
+        (Ul {:className "space-y-1.5"}
+          (for [todo @todos]
+            (Li {:key (str (:id todo))
+                 :className "flex items-center gap-3 p-2.5 bg-white border border-gray-200 rounded-lg group hover:border-gray-300 transition-colors"}
+              (Input {:type "checkbox"
+                      :checked (:done todo)
+                      :className "h-4 w-4 cursor-pointer accent-orange-500 flex-shrink-0"
+                      :onChange #(toggle-todo (:id todo))})
+              (Span {:className (str "flex-1 text-sm "
+                                     (if (:done todo)
+                                       "line-through text-gray-400"
+                                       "text-gray-800"))}
+                (:text todo))
+              (Button {:className "flex-shrink-0 w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors text-lg leading-none"
+                       :aria-label "Remove todo"
+                       :onClick #(remove-todo (:id todo))}
+                "×"))))))))
 
 (defnc StateTab
   []
