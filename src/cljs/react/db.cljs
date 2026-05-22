@@ -41,7 +41,7 @@
   (-notify-watches [_ _ _]
     (throw (ex-info
              "Cursor does not support -notify-watches directly; use swap!/reset! which propagate through the underlying atom's watches."
-             {})))
+             {:type ::notify-watches-unsupported})))
   (-add-watch [cursor k f]
     (add-watch (.-atom cursor) [::cursor k cursor]
       (fn [_ _ old-state new-state]
@@ -56,6 +56,11 @@
 ;; defonce so hot-reload preserves context identity — otherwise existing
 ;; <Provider> instances and their consumers would orphan on every reload.
 (defonce ^:private db-context (react/createContext nil))
+
+;; Shared sentinel for the 0-arity root cursor — avoids allocating a fresh `[]`
+;; per call. cljs-deps still sees `=` between renders, but using one canonical
+;; instance also keeps hash + identity stable for any downstream consumer.
+(def ^:private root-path [])
 
 (defn- db-provider-inner
   [^js props]
@@ -96,23 +101,31 @@
   equivalent to the 0-arity root cursor.
 
   Path must be a vector. Non-vector paths are rejected with ex-info
-  `:type ::invalid-cursor-path`."
-  ([] (use-db []))
+  `:type ::invalid-cursor-path`.
+
+  Cursor identity is memoized on `path` — calling `use-db` with the same path
+  across renders returns the same Cursor (safe in use-effect / use-memo deps).
+  Calling with a different path returns a different Cursor."
+  ([] (use-db root-path))
   ([path]
    (when-not (vector? path)
      (throw (ex-info (str "use-db: path must be a vector (got "
                           (pr-str path) ")")
                      {:type ::invalid-cursor-path :got path})))
-   (let [atom (use-db-atom)]
+   (let [atom    (use-db-atom)
+         ;; Avoid `(seq path)` inside the per-call closures below — on a
+         ;; PersistentVector, seq allocates a ChunkedSeq each call, which
+         ;; use-selector invokes multiple times per render. `count` is O(1)
+         ;; on a vector and allocation-free.
+         pathed? (pos? (count path))]
      ;; use-selector is called for its subscription side-effect: it wires the
      ;; component up to re-render when the value at `path` changes. We discard
-     ;; the returned snapshot — callers read through the Cursor instead, which
-     ;; gives them swap!/reset! and stays the same identity across renders.
+     ;; the returned snapshot — callers read through the Cursor instead.
      (hook/use-selector atom
                         (fn [o n]
-                          (if (seq path)
+                          (if pathed?
                             (not= (get-in o path) (get-in n path))
                             (not= o n)))
-                        (fn [s] (if (seq path) (get-in s path) s))
+                        (fn [s] (if pathed? (get-in s path) s))
                         [path])
      (hook/use-memo (fn [] (Cursor. atom path)) [path]))))

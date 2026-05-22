@@ -9,7 +9,7 @@
    [cljs.react.db :as db]
    ["global-jsdom/register"]
    ["react" :as react]
-   ["@testing-library/react" :refer [renderHook render act]]))
+   ["@testing-library/react" :refer [renderHook render act cleanup]]))
 
 (def ^:private num-tests 50)
 
@@ -34,12 +34,22 @@
     scalar-gen))
 
 ;; Mix small (PAM) and large (PHM) maps so roundtrip + skip-key properties
-;; exercise both paths through clj->js-props. CLJS swaps PersistentArrayMap
-;; → PersistentHashMap at 9 entries.
+;; exercise both paths through clj->js-props. The PHM branch uses
+;; (into (hash-map) m) to force PersistentHashMap even if CLJS later raises
+;; the PAM→PHM threshold, and unique integer-suffixed keywords so collisions
+;; can't shrink the map below 9 entries during generator simplification.
+;; Keys are kept keyword-only so the roundtrip property can compare under
+;; js->clj :keywordize-keys true; the non-keyword (str k) fallback path is
+;; covered by unit tests in component_test.cljs.
+(defn- as-phm [m] (into (hash-map) m))
+
 (def ^:private props-gen
   (gen/one-of
     [(gen/map gen/keyword prop-value-gen {:max-elements 4})
-     (gen/map gen/keyword prop-value-gen {:min-elements 9 :max-elements 16})]))
+     (gen/fmap as-phm
+       (gen/map (gen/fmap #(keyword (str "k" %)) gen/nat)
+                prop-value-gen
+                {:min-elements 9 :max-elements 16}))]))
 
 (deftest clj->js-props-roundtrip
   (let [result (tc/quick-check num-tests
@@ -78,36 +88,41 @@
                          hook-fn (fn [] (hook/cljs-deps d))
                          r       (renderHook hook-fn)
                          first-arr (.. r -result -current)]
-                     (swap! out conj first-arr)
-                     (.rerender r)
-                     (swap! out conj (.. r -result -current))
-                     (.unmount r)
-                     (identical? (first @out) (second @out)))))]
+                     (try
+                       (swap! out conj first-arr)
+                       (.rerender r)
+                       (swap! out conj (.. r -result -current))
+                       (identical? (first @out) (second @out))
+                       (finally (.unmount r) (cleanup))))))]
     (is (:result result) (pr-str result))))
 
 (deftest cljs-deps-unequal-inputs-bump
   ;; When deps change to a non-equal value, the returned array must differ.
-  (let [result (tc/quick-check num-tests
-                 (prop/for-all [a (gen/vector scalar-gen 1 4)
-                                b (gen/vector scalar-gen 1 4)]
-                   (if (= a b)
-                     true
-                     (let [state (atom a)
-                           r     (renderHook (fn [] (hook/cljs-deps @state)))
-                           arr1  (.. r -result -current)]
+  ;; gen/such-that ensures a != b so we don't waste iterations on vacuous passes.
+  (let [pair-gen (gen/such-that (fn [[a b]] (not= a b))
+                  (gen/tuple (gen/vector scalar-gen 1 4)
+                             (gen/vector scalar-gen 1 4)))
+        result (tc/quick-check num-tests
+                 (prop/for-all [[a b] pair-gen]
+                   (let [state (atom a)
+                         r     (renderHook (fn [] (hook/cljs-deps @state)))
+                         arr1  (.. r -result -current)]
+                     (try
                        (reset! state b)
                        (.rerender r)
-                       (let [arr2 (.. r -result -current)]
-                         (.unmount r)
-                         (not (identical? arr1 arr2)))))))]
+                       (not (identical? arr1 (.. r -result -current)))
+                       (finally (.unmount r) (cleanup))))))]
     (is (:result result) (pr-str result))))
 
 (deftest cursor-lens-set-get
-  ;; reset! through cursor then deref returns the set value.
+  ;; reset! through cursor overwrites whatever was there; deref returns the set value.
+  ;; Seed the atom with a sibling at the watched path so we also exercise the
+  ;; overwrite-existing case, not just the create-from-empty case.
   (let [result (tc/quick-check num-tests
-                 (prop/for-all [path (gen/vector gen/keyword 1 3)
-                                v    scalar-gen]
-                   (let [a (atom {})
+                 (prop/for-all [path  (gen/vector gen/keyword 1 3)
+                                seed  scalar-gen
+                                v     scalar-gen]
+                   (let [a (atom (assoc-in {} path seed))
                          c (db/->Cursor a path)]
                      (reset! c v)
                      (= v @c (get-in @a path)))))]
@@ -136,11 +151,10 @@
                    (let [check (fn [expected swapper]
                                  (let [r (renderHook #(hook/use-state init))
                                        s (.. r -result -current)]
-                                   (act #(swapper s))
-                                   (let [after (.. r -result -current)
-                                         ok    (= expected @after)]
-                                     (.unmount r)
-                                     ok)))]
+                                   (try
+                                     (act #(swapper s))
+                                     (= expected @(.. r -result -current))
+                                     (finally (.unmount r) (cleanup)))))]
                      (and
                        (check (inc init) #(swap! % inc))
                        (check (+ init a) #(swap! % + a))
@@ -157,10 +171,13 @@
                    (let [check (fn [expected swapper]
                                  (let [r  (renderHook #(hook/use-ref init))
                                        ra (.. r -result -current)]
-                                   (swapper ra)
-                                   (let [ok (= expected @ra)]
-                                     (.unmount r)
-                                     ok)))]
+                                   (try
+                                     ;; Refs don't trigger re-renders, so an
+                                     ;; act wrap isn't required; we still keep
+                                     ;; cleanup in the finally for hygiene.
+                                     (swapper ra)
+                                     (= expected @ra)
+                                     (finally (.unmount r) (cleanup)))))]
                      (and
                        (check (inc init) #(swap! % inc))
                        (check (+ init a) #(swap! % + a))
@@ -171,13 +188,24 @@
 (deftest cursor-watch-fires-iff-path-changes
   ;; Cursor's IWatchable impl should fire the callback exactly when the value
   ;; at path actually changes — unrelated atom transitions must not fire it.
-  (let [result (tc/quick-check num-tests
-                 (prop/for-all [path        (gen/vector gen/keyword 1 2)
-                                transitions (gen/vector
-                                              (gen/tuple
-                                                (gen/vector gen/keyword 1 2)
-                                                scalar-gen)
-                                              0 6)]
+  ;; Bias transition paths to overlap with the watched path so we actually
+  ;; exercise the "fire" branch, not just the "skip" branch (with low keyword
+  ;; cardinality, independent paths almost never collide).
+  (let [path+trans-gen
+        (gen/bind (gen/vector gen/keyword 1 2)
+          (fn [path]
+            (gen/tuple
+              (gen/return path)
+              (gen/vector
+                (gen/tuple
+                  (gen/one-of
+                    [(gen/return path)
+                     (gen/fmap #(into path %) (gen/vector gen/keyword 0 1))
+                     (gen/vector gen/keyword 1 2)])
+                  scalar-gen)
+                0 6))))
+        result (tc/quick-check num-tests
+                 (prop/for-all [[path transitions] path+trans-gen]
                    (let [a       (atom {})
                          c       (db/->Cursor a path)
                          fires   (cljs.core/atom 0)
@@ -209,10 +237,9 @@
                          memoized     (component/memo-component inner)
                          [first-p & rest-ps] seq-props
                          r            (render (component/create-cljs-element memoized first-p))]
-                     (doseq [p rest-ps]
-                       (act #(.rerender r (component/create-cljs-element memoized p))))
-                     (let [distinct-groups (count (partition-by identity seq-props))
-                           observed        @render-count]
-                       (.unmount r)
-                       (= observed distinct-groups)))))]
+                     (try
+                       (doseq [p rest-ps]
+                         (act #(.rerender r (component/create-cljs-element memoized p))))
+                       (= @render-count (count (partition-by identity seq-props)))
+                       (finally (.unmount r) (cleanup))))))]
     (is (:result result) (pr-str result))))

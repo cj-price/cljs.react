@@ -81,10 +81,12 @@
       (is (= "y" (gobj/get js-obj "a.b/c"))))))
 
 (deftest clj->js-props-non-keyword-key-test
-  (testing "non-keyword, non-string keys are coerced via str"
-    (let [js-obj (component/clj->js-props {42 "n" 'sym "s"})]
+  (testing "non-keyword, non-string keys are coerced via str (incl. namespaced symbols)"
+    (let [js-obj (component/clj->js-props {42 "n" 'sym "s" 'foo/bar "ns"})]
       (is (= "n" (gobj/get js-obj "42")))
-      (is (= "s" (gobj/get js-obj "sym"))))))
+      (is (= "s" (gobj/get js-obj "sym")))
+      ;; namespaced symbol should preserve its full string form, not just (name s)
+      (is (= "ns" (gobj/get js-obj "foo/bar"))))))
 
 (deftest clj->js-props-nil-and-false-values-test
   (testing "nil and false values are preserved (not dropped)"
@@ -138,6 +140,7 @@
     (let [big (zipmap (map #(keyword (str "k" %)) (range 12)) (range 12))]
       ;; sanity: confirm we actually exercise the non-ArrayMap branch
       (is (not (instance? PersistentArrayMap big)))
+      (is (instance? PersistentHashMap big))
       (let [js-obj (component/clj->js-props big)]
         (is (= 11 (gobj/get js-obj "k11")))
         (is (= 0  (gobj/get js-obj "k0")))

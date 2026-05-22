@@ -68,10 +68,11 @@
       (cleanup))))
 
 (deftest element-missing-tag-ex-info-test
-  (testing "Element :tag-missing throws an ex-info with :type ::missing-tag"
+  (testing "Element :tag-missing throws ex-info with shared :type cljs.react.component/missing-tag
+            (same keyword as make-element-fn so a single catch handles both)"
     (let [e (try (Element {}) nil (catch :default e e))]
       (is (some? e))
-      (is (= :cljs.react.core/missing-tag (:type (ex-data e)))))))
+      (is (= :cljs.react.component/missing-tag (:type (ex-data e)))))))
 
 (deftest element-nested-children-test
   (testing "Element handles nested Elements"
@@ -174,6 +175,26 @@
                           :ref ext-ref}))]
       (is (= "INPUT" (.. ext-ref -current -tagName)))
       (is (= "type here" (.. ext-ref -current -placeholder)))
+      (cleanup))))
+
+(def ^:private direct-call-ref-capture (atom nil))
+
+(defnc ^:private ParentWithDirectRef [_]
+  (let [input-ref (hook/use-ref nil)]
+    (reset! direct-call-ref-capture input-ref)
+    (Element {:tag "div"}
+      (RefInput {:ref input-ref :placeholder "hi"}))))
+
+(deftest defnc-forward-ref-direct-call-test
+  (testing "calling a :forward-ref defnc directly with :ref in the props map
+            wires the parent's ref to the rendered DOM (README pattern)"
+    (reset! direct-call-ref-capture nil)
+    (let [result (render (ParentWithDirectRef))
+          input  (.querySelector (.-container result) "input")]
+      (is (some? input))
+      (is (some? @@direct-call-ref-capture)
+          "after mount, parent's RefAtom should deref to the DOM input node")
+      (is (identical? input @@direct-call-ref-capture))
       (cleanup))))
 
 ;;; :key hoist — keyed lists must not remount on reorder

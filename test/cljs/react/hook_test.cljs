@@ -9,44 +9,65 @@
 
 (deftest state-atom-test
   (testing "StateAtom returns derefable value"
-    (let [result (renderHook #(hook/->StateAtom (react/useState 0)))
+    (let [result (renderHook #(hook/use-state 0))
           state (.. result -result -current)]
       (is (= 0 @state))))
 
-  (testing "reset! updates state"
-    (let [result (renderHook #(hook/->StateAtom (react/useState 0)))
+  (testing "reset! updates state; re-pulled wrapper sees the new value"
+    (let [result (renderHook #(hook/use-state 0))
           state (.. result -result -current)]
       (act #(reset! state 5))
       (let [new-state (.. result -result -current)]
         (is (= 5 @new-state)))))
 
   (testing "swap! with single fn"
-    (let [result (renderHook #(hook/->StateAtom (react/useState 0)))
+    (let [result (renderHook #(hook/use-state 0))
           state (.. result -result -current)]
       (act #(swap! state inc))
       (let [new-state (.. result -result -current)]
         (is (= 1 @new-state)))))
 
   (testing "swap! with fn and args"
-    (let [result (renderHook #(hook/->StateAtom (react/useState {:count 0})))
+    (let [result (renderHook #(hook/use-state {:count 0}))
           state (.. result -result -current)]
       (act #(swap! state assoc :count 5))
       (let [new-state (.. result -result -current)]
         (is (= {:count 5} @new-state)))))
 
   (testing "swap! with multiple args"
-    (let [result (renderHook #(hook/->StateAtom (react/useState {:a 1 :b 2})))
+    (let [result (renderHook #(hook/use-state {:a 1 :b 2}))
           state (.. result -result -current)]
       (act #(swap! state assoc :c 3 :d 4))
       (let [new-state (.. result -result -current)]
         (is (= {:a 1 :b 2 :c 3 :d 4} @new-state)))))
 
   (testing "reset! returns the new value (matches clojure.core/reset! contract)"
-    (let [result (renderHook #(hook/->StateAtom (react/useState 0)))
+    (let [result (renderHook #(hook/use-state 0))
           state  (.. result -result -current)
           ret    (atom nil)]
       (act #(reset! ret (reset! state 42)))
-      (is (= 42 @ret)))))
+      (is (= 42 @ret))))
+
+  (testing "StateAtom is = across renders (via IEquiv on setter identity)"
+    (let [result (renderHook #(hook/use-state 0))
+          first-state (.. result -result -current)]
+      (.rerender result)
+      (let [second-state (.. result -result -current)]
+        ;; Wrapper is fresh each render (snapshot semantics), but they compare
+        ;; equal under = because they share the same useState setter. This is
+        ;; what makes a StateAtom safe to place into cljs-deps.
+        (is (not (identical? first-state second-state)))
+        (is (= first-state second-state))
+        (is (= (hash first-state) (hash second-state))))))
+
+  (testing "StateAtoms from different useState slots are not ="
+    (let [result (renderHook #(let [a (hook/use-state 0)
+                                    b (hook/use-state 0)]
+                                #js [a b]))
+          arr (.. result -result -current)
+          a (aget arr 0)
+          b (aget arr 1)]
+      (is (not= a b)))))
 
 (deftest cljs-deps-test
   (testing "same deps keep counter stable"
@@ -206,9 +227,11 @@
       (is (= 2 @compute-count)))))
 
 (deftest use-ref-test
-  (testing "use-ref returns RefAtom with nil default"
+  (testing "use-ref 0-arity wraps a RefAtom around a fresh React ref"
     (let [result (renderHook #(hook/use-ref))
           ref (.. result -result -current)]
+      (is (instance? hook/RefAtom ref))
+      (is (some? (hook/react-ref ref)))
       (is (nil? @ref))))
 
   (testing "use-ref returns RefAtom with initial value"
@@ -224,35 +247,69 @@
       (let [ref2 (.. result -result -current)]
         (is (identical? @ref @ref2)))))
 
-  (testing "reset! updates ref value"
+  ;; Mutation tests: each verifies the NEW value survives a subsequent render
+  ;; via the same ref handle. Without the rerender + re-pull, these would
+  ;; pass even if use-ref returned a fresh ref every render.
+  (testing "reset! updates ref value and persists across renders"
     (let [result (renderHook #(hook/use-ref 0))
           ref (.. result -result -current)]
       (reset! ref 100)
-      (is (= 100 @ref))))
+      (is (= 100 @ref))
+      (.rerender result)
+      (let [ref2 (.. result -result -current)]
+        ;; RefAtom wrapper is fresh per render (snapshot semantics), but it
+        ;; wraps the same underlying React ref so it compares = via IEquiv
+        ;; and the mutation is visible through the new wrapper.
+        (is (not (identical? ref ref2)))
+        (is (= ref ref2))
+        (is (identical? (hook/react-ref ref) (hook/react-ref ref2)))
+        (is (= 100 @ref2)))))
 
-  (testing "swap! with single fn"
+  (testing "swap! with single fn persists across renders"
     (let [result (renderHook #(hook/use-ref 0))
           ref (.. result -result -current)]
       (swap! ref inc)
-      (is (= 1 @ref))))
+      (.rerender result)
+      (is (= 1 @(.. result -result -current)))))
 
-  (testing "swap! with fn and arg"
+  (testing "swap! with fn and arg persists across renders"
     (let [result (renderHook #(hook/use-ref 0))
           ref (.. result -result -current)]
       (swap! ref + 10)
-      (is (= 10 @ref))))
+      (.rerender result)
+      (is (= 10 @(.. result -result -current)))))
 
-  (testing "swap! with fn and two args"
+  (testing "swap! with fn and two args persists across renders"
     (let [result (renderHook #(hook/use-ref {:a 1}))
           ref (.. result -result -current)]
       (swap! ref assoc :b 2 :c 3)
-      (is (= {:a 1 :b 2 :c 3} @ref))))
+      (.rerender result)
+      (is (= {:a 1 :b 2 :c 3} @(.. result -result -current)))))
 
-  (testing "swap! with fn and variadic args"
+  (testing "swap! with fn and variadic args persists across renders"
     (let [result (renderHook #(hook/use-ref {:a 1}))
           ref (.. result -result -current)]
       (swap! ref merge {:b 2} {:c 3} {:d 4})
-      (is (= {:a 1 :b 2 :c 3 :d 4} @ref)))))
+      (.rerender result)
+      (is (= {:a 1 :b 2 :c 3 :d 4} @(.. result -result -current)))))
+
+  (testing "RefAtom is = across renders (via IEquiv on react-ref identity)"
+    (let [result (renderHook #(hook/use-ref 0))
+          first-ref (.. result -result -current)]
+      (.rerender result)
+      (let [second-ref (.. result -result -current)]
+        (is (not (identical? first-ref second-ref)))
+        (is (= first-ref second-ref))
+        (is (= (hash first-ref) (hash second-ref))))))
+
+  (testing "RefAtoms from different useRef slots are not ="
+    (let [result (renderHook #(let [a (hook/use-ref 0)
+                                    b (hook/use-ref 0)]
+                                #js [a b]))
+          arr (.. result -result -current)
+          a (aget arr 0)
+          b (aget arr 1)]
+      (is (not= a b)))))
 
 (def TestContext (react/createContext "default"))
 

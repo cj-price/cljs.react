@@ -146,9 +146,10 @@ element-creation position, it is CamelCase. Otherwise it is kebab-case.
 
 ### `ErrorBoundary` and `role="alert"`
 
-`ErrorBoundary`'s `:fallback` is arbitrary markup. Give the root of your
-fallback `:role "alert"` so screen readers announce the error when it
-appears:
+`ErrorBoundary`'s `:fallback` is either a static React element or a 1-arity
+`(fn [error] ...)` returning an element. Use the function form when you need
+to display the error itself. Give the root of your fallback `:role "alert"`
+so screen readers announce the error when it appears:
 
 ```clojure
 (ErrorBoundary
@@ -173,14 +174,15 @@ when attaching it to a DOM element:
 (defnc Parent []
   (let [input-ref (use-ref nil)]
     (Element {:tag "div"}
-      (FancyInput {:ref (react-ref input-ref) :placeholder "type here"})
+      (FancyInput {:ref input-ref :placeholder "type here"})
       (Element {:tag "button"
                 :onClick #(.focus @input-ref)}
         "Focus"))))
 ```
 
 `use-ref` returns a `RefAtom` — `@input-ref` gives back the current DOM node
-once the input has mounted.
+once the input has mounted. At the call site, pass the `RefAtom` directly;
+`forward-ref` accepts either a `RefAtom` or a raw React ref object.
 
 ### `:key` on function components
 

@@ -1,0 +1,54 @@
+name: test
+
+on:
+  push:
+    branches: [trunk]
+  pull_request:
+    branches: [trunk]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Cache Nix store
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Cache Maven (.m2)
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/deps.edn', '**/shadow-cljs.edn') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-
+
+      - name: Cache shadow-cljs build state
+        uses: actions/cache@v4
+        with:
+          path: .shadow-cljs
+          key: ${{ runner.os }}-shadow-cljs-${{ hashFiles('**/shadow-cljs.edn') }}
+          restore-keys: |
+            ${{ runner.os }}-shadow-cljs-
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install JS deps
+        run: nix-shell --run 'pnpm install --frozen-lockfile'
+
+      - name: Run tests
+        run: nix-shell --run 'bb test'
+
+      - name: Release-demo smoke build
+        run: nix-shell --run 'pnpm exec shadow-cljs release release-demo'

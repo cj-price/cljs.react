@@ -29,9 +29,13 @@
   [^FormHandle h]
   @(.-opts-ref h))
 
+(defn- unwrap-values
+  "Resolve a :values opt to a plain map. Accepts a map or an IDeref (atom/cursor)."
+  [values]
+  (if (satisfies? IDeref values) @values values))
+
 (defn- current-initial-values [^FormHandle h]
-  (let [values (:values @(.-opts-ref h))]
-    (if (satisfies? IDeref values) @values values)))
+  (unwrap-values (:values @(.-opts-ref h))))
 
 (defn reset-form!
   "Reset the form to its initial values, clearing errors, dirty/touched flags,
@@ -154,7 +158,9 @@
     :values      - initial values map, or a watchable (atom/cursor) for reactive defaults
     :validate    - fn(values) -> errors-map or Promise<errors-map>
     :on-submit   - fn(values) -> nil or Promise
-    :validate-on - :blur to also validate on blur (default: submit only)
+    :validate-on - nil | :submit | :blur. :submit (the default) validates only
+                   when the form is submitted; :blur additionally re-validates
+                   when a field blurs.
 
   When :values is a plain map, it is captured once on first render — later
   changes to the same map key (e.g. props re-rendering with a new :values)
@@ -178,7 +184,7 @@
     ;; Initialize once. `initial` is computed inside the guard so the
     ;; `@values` deref of a watchable doesn't run on every render.
     (when (nil? @handle-ref)
-      (let [initial (if (satisfies? IDeref values) @values values)]
+      (let [initial (unwrap-values values)]
         (reset! handle-ref
                 (FormHandle. (atom (make-state initial))
                              (atom opts)
@@ -197,7 +203,10 @@
         (fn []
           (if watchable-values
             (let [form-atom (.-form-atom ^FormHandle @handle-ref)
-                  key       (gensym "form-values")]
+                  ;; Fresh JS object per effect setup — identity-keyed, no
+                  ;; gensym global-counter touch / symbol allocation. Same
+                  ;; pattern as use-selector's subscribe key.
+                  key       #js {}]
               (add-watch watchable-values key
                 (fn [_ _ _ new-vals]
                   (swap! form-atom
@@ -222,18 +231,14 @@
                            (fn [o n] (field-diff? o n field-key))
                            (fn [s] (field-snap s field-key))
                            [field-key])
-        ^js handlers (ensure-handlers! handle field-key checkbox?)]
+        ^js handlers (ensure-handlers! handle field-key checkbox?)
+        base {:error    (:error snap)
+              :dirty    (:dirty snap)
+              :onChange (.-onChange handlers)
+              :onBlur   (.-onBlur handlers)}]
     (if checkbox?
-      {:checked  (boolean (:value snap))
-       :error    (:error snap)
-       :dirty    (:dirty snap)
-       :onChange (.-onChange handlers)
-       :onBlur   (.-onBlur handlers)}
-      {:value    (:value snap)
-       :error    (:error snap)
-       :dirty    (:dirty snap)
-       :onChange (.-onChange handlers)
-       :onBlur   (.-onBlur handlers)})))
+      (assoc base :checked (boolean (:value snap)))
+      (assoc base :value (:value snap)))))
 
 (defn use-field
   "Subscribe to a single field. Returns a map with:
@@ -330,7 +335,12 @@
   "Returns an onSubmit event handler.
 
   1-arity: uses :on-submit from opts (read at event time, always fresh).
-  2-arity: override with a specific submit fn."
+  2-arity: override with a specific submit fn.
+
+  Both arities call `.preventDefault` on the event, run validation, and then
+  invoke the submit fn with the current :values. While a submit is in flight
+  (:submitting? true), further submits are ignored — clicking the submit
+  button twice will not run on-submit twice."
   ([^FormHandle handle]
    (fn [^js e]
      (.preventDefault e)

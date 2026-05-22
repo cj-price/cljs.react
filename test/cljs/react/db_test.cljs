@@ -105,14 +105,21 @@
                       #js {:wrapper (db-wrapper {})})))))
 
 (deftest cursor-isolation-test
-  (testing "updating one cursor doesn't affect unrelated paths"
+  (testing "updating one cursor doesn't affect a cursor on an unrelated path"
     (let [wrapper (db-wrapper {:a 1 :b 2})
           result-a (renderHook #(db/use-db [:a]) #js {:wrapper wrapper})
-          cursor-a (.. result-a -result -current)]
-      (is (= 1 @cursor-a))
-      (act #(reset! cursor-a 100))
-      (let [new-cursor-a (.. result-a -result -current)]
-        (is (= 100 @new-cursor-a))))))
+          result-b (renderHook #(db/use-db [:b]) #js {:wrapper wrapper})
+          cursor-a-before (.. result-a -result -current)
+          cursor-b-before (.. result-b -result -current)]
+      (is (= 1 @cursor-a-before))
+      (is (= 2 @cursor-b-before))
+      (act #(reset! cursor-a-before 100))
+      (let [cursor-a-after (.. result-a -result -current)
+            cursor-b-after (.. result-b -result -current)]
+        (is (= 100 @cursor-a-after))
+        ;; :b cursor value is unchanged and identity is stable across the update
+        (is (= 2 @cursor-b-after))
+        (is (identical? cursor-b-before cursor-b-after))))))
 
 (deftest use-db-atom-test
   (testing "use-db-atom returns the atom"

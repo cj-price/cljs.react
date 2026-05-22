@@ -16,10 +16,23 @@
   (-reset! [_ v] ((aget arr 1) v) v)
 
   ISwap
-  (-swap! [_ f] ((aget arr 1) f))
-  (-swap! [_ f a] ((aget arr 1) #(f % a)))
-  (-swap! [_ f a b] ((aget arr 1) #(f % a b)))
-  (-swap! [_ f a b xs] ((aget arr 1) #(apply f % a b xs))))
+  (-swap! [_ f]        ((aget arr 1) f))
+  (-swap! [_ f a]      ((aget arr 1) #(f % a)))
+  (-swap! [_ f a b]    ((aget arr 1) #(f % a b)))
+  (-swap! [_ f a b xs] ((aget arr 1) #(apply f % a b xs)))
+
+  ;; A fresh StateAtom is allocated each render, but two wrappers backed by
+  ;; the same useState slot share the same setter — React guarantees setter
+  ;; identity is stable per hook position. So we use setter identity as the
+  ;; equivalence key: this gives callers stable `=` across renders without
+  ;; the hazards of caching a wrapper that mutates a render-spanning ref.
+  IEquiv
+  (-equiv [_ other]
+    (and (instance? StateAtom other)
+         (identical? (aget arr 1) (aget (.-arr ^StateAtom other) 1))))
+
+  IHash
+  (-hash [_] (goog/getUid (aget arr 1))))
 
 (defn ^:no-doc cljs-deps
   "Compare ClojureScript deps using structural equality.
@@ -69,15 +82,25 @@
   IReset
   (-reset! [_ v] (set! (.-current ref) v) v)
   ISwap
-  (-swap! [o f] (-reset! o (f (.-current ref))))
-  (-swap! [o f a] (-reset! o (f (.-current ref) a)))
-  (-swap! [o f a b] (-reset! o (f (.-current ref) a b)))
-  (-swap! [o f a b xs] (-reset! o (apply f (.-current ref) a b xs)))
+  (-swap! [o f]            (-reset! o (f (.-current ref))))
+  (-swap! [o f a]          (-reset! o (f (.-current ref) a)))
+  (-swap! [o f a b]        (-reset! o (f (.-current ref) a b)))
+  (-swap! [o f a b xs]     (-reset! o (apply f (.-current ref) a b xs)))
   IReactRef
-  (-react-ref [_] ref))
+  (-react-ref [_] ref)
+
+  ;; Same rationale as StateAtom: a fresh RefAtom is built per render, but
+  ;; two wrappers around the same underlying React ref are considered equal.
+  IEquiv
+  (-equiv [_ other]
+    (and (instance? RefAtom other)
+         (identical? ref (.-ref ^RefAtom other))))
+
+  IHash
+  (-hash [_] (goog/getUid ref)))
 
 (defn use-ref
-  ([] (RefAtom. (react/useRef nil)))
+  ([]        (RefAtom. (react/useRef nil)))
   ([initial] (RefAtom. (react/useRef initial))))
 
 (defn react-ref
@@ -93,9 +116,11 @@
   ([ref create-handle deps]
    (react/useImperativeHandle (-react-ref ref) create-handle (cljs-deps deps))))
 
-(def use-context react/useContext)
+(def ^{:doc "React.useContext — read the current value of a React context."}
+  use-context react/useContext)
 
-(def use-id react/useId)
+(def ^{:doc "React.useId — generates a unique, stable id suitable for accessibility attributes (matched between server and client)."}
+  use-id react/useId)
 
 (defn use-sync-external-store
   "Subscribe to an external store.
@@ -116,10 +141,18 @@
   (let [arr (react/useTransition)]
     [(aget arr 0) (aget arr 1)]))
 
-(def use-deferred-value react/useDeferredValue)
+(def ^{:doc "React.useDeferredValue — returns a deferred version of the supplied value that lags slightly behind during expensive updates."}
+  use-deferred-value react/useDeferredValue)
 
 (defn use-state
-  "Local component state. Returns a StateAtom that supports deref, reset!, and swap!."
+  "Local component state. Returns a StateAtom that supports deref, reset!, and swap!.
+
+  A fresh StateAtom value is returned each render with the current
+  [value setter] tuple captured (matching React's snapshot semantics — `@s`
+  in a closure reads the value at the render the closure was created in).
+  StateAtoms backed by the same useState slot compare equal under `=` (setter
+  identity is stable across renders), so a StateAtom is safe to place into
+  cljs.react use-effect / use-memo / use-callback deps."
   [initial]
   (StateAtom. (react/useState initial)))
 
@@ -155,6 +188,12 @@
                              (.-snap cached)
                              (let [new-snap (select state)]
                                (if (and cached (= new-snap (.-snap cached)))
+                                 ;; In-place advance of cached.state is safe:
+                                 ;; React's useSyncExternalStore identity-checks
+                                 ;; on the *returned snapshot*, not on the cache
+                                 ;; object — and we return (.-snap cached) here,
+                                 ;; which is unchanged. The mutation only updates
+                                 ;; our identity-shortcut for the next call.
                                  (do (set! (.-state cached) state)
                                      (.-snap cached))
                                  (do (reset! cache-ref

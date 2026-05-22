@@ -66,8 +66,9 @@
     `(def ~name
        (let [inner#    (fn [~props-sym] ~@body)
              _#        (set! (.-displayName inner#) ~display-name)
+             ;; memo-wrapper threads displayName from inner# onto memoized#
+             ;; via propagate-display-name!, so we don't need to re-set it here.
              memoized# (~memo-wrapper inner#)
-             _#        (set! (.-displayName memoized#) ~display-name)
              build#    ~build-fn
              wrapper#  (fn
                          ([] (build# memoized#))

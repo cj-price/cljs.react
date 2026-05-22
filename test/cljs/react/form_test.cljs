@@ -88,30 +88,24 @@
       (let [updated (.. result -result -current)]
         (is (= "Bob" (:value updated))))))
 
-  (testing "onBlur marks field touched"
-    (let [{:keys [result]}
-          (render-field {:values {:name ""}
-                         :validate (fn [_] {:name "Required"})}
-                        :name)
-          field (.. result -result -current)]
-      ;; Before blur, no error shown
-      (is (nil? (:error field)))
-      ;; Trigger blur
-      (act #((:onBlur field) nil))
-      ;; No validate-on :blur set, so error still nil (shown on submit)
-      (let [after (.. result -result -current)]
-        (is (nil? (:error after))))))
-
-  (testing "error shown after field is touched (via onChange)"
+  (testing "onBlur marks field touched in form state"
     (let [{:keys [result handle-atom]}
           (render-field {:values {:name ""}} :name)
           field (.. result -result -current)]
-      ;; Manually set an error and touch the field
-      (act #(do
-              (form-set-error! @handle-atom :name "Required")
-              ((:onBlur field) nil)))
-      (let [after (.. result -result -current)]
-        (is (= "Required" (:error after))))))
+      (is (not (contains? (:touched (form-state @handle-atom)) :name)))
+      (act #((:onBlur field) nil))
+      (is (contains? (:touched (form-state @handle-atom)) :name))))
+
+  (testing "error renders only after field is touched via onBlur"
+    (let [{:keys [result handle-atom]}
+          (render-field {:values {:name ""}} :name)
+          field-pre (.. result -result -current)]
+      ;; Set an error before touching — should not surface to :error
+      (act #(form-set-error! @handle-atom :name "Required"))
+      (is (nil? (:error (.. result -result -current))))
+      ;; Now touch via onBlur — error should surface
+      (act #((:onBlur field-pre) nil))
+      (is (= "Required" (:error (.. result -result -current))))))
 
   (testing "dirty is false initially"
     (let [{:keys [result]} (render-field {:values {:name "Alice"}} :name)
@@ -127,20 +121,27 @@
 
   (testing "changing field-a does not re-render field-b subscription"
     (let [handle-holder (cljs.core/atom nil)
+          renders       (cljs.core/atom 0)
           b-result (renderHook #(let [f (form/use-form {:values {:a "" :b ""}})]
                                   (reset! handle-holder f)
+                                  (swap! renders inc)
                                   (form/use-field f :b)))
+          baseline @renders
           b-before (.. b-result -result -current)]
-      ;; Directly update :a in the form atom
+      ;; Directly update :a in the form atom; :b subscription should not bump
       (act #(form-set-value! @handle-holder :a "hello"))
-      ;; :b subscription should not have changed
+      (is (= baseline @renders) "field-b hook was re-invoked despite unrelated :a change")
       (let [b-after (.. b-result -result -current)]
-        (is (= (:value b-before) (:value b-after)))))))
+        (is (= (:value b-before) (:value b-after))))
+      ;; Sanity: updating :b *does* bump the hook
+      (act #(form-set-value! @handle-holder :b "x"))
+      (is (= (inc baseline) @renders)
+          "field-b hook should re-invoke when :b changes"))))
 
 ;;; use-field with :checkbox?
 
 (deftest use-field-checkbox-test
-  (testing "use-field with {:checkbox? true} returns :checked key"
+  (testing "use-field with {:checkbox? true} returns :checked key and toggles via onChange"
     (let [handle-atom (cljs.core/atom nil)
           result (renderHook #(let [f (form/use-form {:values {:terms false}})]
                                 (reset! handle-atom f)
@@ -149,7 +150,16 @@
       (is (false? (:checked field)))
       (is (nil? (:value field)))
       (is (fn? (:onChange field)))
-      (is (fn? (:onBlur field))))))
+      (is (fn? (:onBlur field)))
+      ;; Flip via the checkbox onChange path — value should reflect e.target.checked
+      (act #((:onChange field) #js {:target #js {:checked true}}))
+      (is (true? (:checked (.. result -result -current))))
+      (is (true? (form-value @handle-atom :terms)))
+      ;; And flip back
+      (act #((:onChange (.. result -result -current))
+              #js {:target #js {:checked false}}))
+      (is (false? (:checked (.. result -result -current))))
+      (is (false? (form-value @handle-atom :terms))))))
 
 ;;; on-blur validation bug fixes
 

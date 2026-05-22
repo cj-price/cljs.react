@@ -12,18 +12,21 @@ Includes hooks, form management, global state (Cursor pattern), and a demo app.
 
 ```
 src/cljs/react/         # Library source
-  core.cljs             # Element DSL, hooks, context, portals
-  hook.cljs             # useState/useEffect/etc. with atom integration
-  component.cljs        # defnc macro, memoization
+  core.cljs / core.clj  # Public re-exports + Element DSL; defnc macro in core.clj
+  hook.cljs             # Hooks with atom integration (StateAtom, RefAtom, ...)
+  component.cljs        # clj->js-props, memo-component, forward-ref
   form.cljs             # Form state, per-field subscriptions, validation
   db.cljs               # Global state via Cursor + Context
+  dom.cljs              # create-root, render, hydrate-root, unmount, create-portal
+  error_boundary.cljs   # ErrorBoundary (class component via Reflect.construct)
 
-dev/cljs/react/demo/    # Demo app (6 tabs)
-  basics.cljs / state.cljs / effects.cljs
-  advanced.cljs / db.cljs / forms.cljs / util.cljs
+dev/cljs/react/demo/    # Demo app
+  basics.cljs / state.cljs / effects.cljs / advanced.cljs
+  db.cljs / forms.cljs / mui.cljs / util.cljs
 
 test/cljs/react/        # Tests (cljs.test + React Testing Library)
-  form_test.cljs / hook_test.cljs / db_test.cljs
+  component_test.cljs / core_test.cljs / db_test.cljs / dom_test.cljs
+  form_test.cljs / hook_test.cljs / property_test.cljs
 
 public/index.html       # Demo entry point (port 9011)
 shadow-cljs.edn         # Build targets: :demo :test :benchmark :release-demo
@@ -66,7 +69,7 @@ nix-shell --run 'bb bench-baseline'  # Save baseline
 (use-db [:user :name])  ; Cursor scoped to a path
 
 ;; Forms
-(use-form {:fields {...} :on-submit f})  ; returns FormHandle
+(use-form {:values {...} :validate f :on-submit f :validate-on :blur})  ; FormHandle
 
 ;; Hooks
 use-effect   use-memo   use-callback   use-ref   use-atom

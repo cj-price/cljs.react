@@ -23,9 +23,11 @@
 (declare props->js)
 
 (defn- convert-value
-  "Convert one prop value. Inlined branches mirror the value-conversion
-  logic shared by both the PersistentArrayMap fast path and the generic
-  reduce-kv fallback."
+  "Convert one prop value. Maps recurse through props->js; vectors and other
+  sequentials become JS arrays via to-array (shallow — array elements are not
+  walked, since React-array contents are typically already JS-friendly).
+  Fast-paths PersistentArrayMap / PersistentVector ahead of the generic
+  map?/sequential? branches to skip protocol dispatch on the common case."
   [v]
   (cond
     (instance? PersistentArrayMap v) (props->js v)
@@ -92,16 +94,21 @@
     :else                                 (pos? (count props))))
 
 (defn clj->js-props
-  "Convert ClojureScript map to JavaScript object for React props.
-  Handles nested structures without modifying prop names.
+  "Convert a ClojureScript map to a JavaScript object for React props.
 
-  Returns nil for nil or empty maps — React accepts nil props and skips
-  the props-object allocation that would otherwise happen on every call.
-  Nested empty maps are preserved as empty JS objects to avoid silently
-  changing the shape of values consumers read back.
+  - Nested maps are walked recursively (so `{:style {:color \"red\"}}` becomes
+    `#js {:style #js {:color \"red\"}}`).
+  - Sequentials become JS arrays via `to-array` — conversion is **shallow**:
+    elements inside the array (e.g. CLJS maps inside `:rows`) are kept by
+    reference, not recursively converted. Pass already-JS-friendly values when
+    handing arrays to a JS-only consumer.
+  - `:ref` whose value is a RefAtom is unwrapped to the raw React ref.
+  - nil / empty input → nil (React accepts nil props; this saves an
+    allocation per call). Nested empty maps round-trip as `#js {}` to avoid
+    quietly changing the shape consumers read back.
 
-  The 2-arity form drops `skip-key` from the output without first
-  allocating a dissoc'd map — used by `Element` to omit `:tag`."
+  The 2-arity form drops `skip-key` from the output without first allocating
+  a dissoc'd map — used by `Element` to omit `:tag`."
   (^js [props] (clj->js-props props nil))
   (^js [props skip-key]
    (when (has-entries? props)
@@ -211,6 +218,16 @@
   ;; Just use React.memo with default comparison (shallow equality)
   (propagate-display-name! component-fn (react/memo component-fn)))
 
+(defn element-props
+  "Validate the :tag key and convert the rest of the props map to a JS object.
+  Throws ex-info with :type ::missing-tag if :tag is nil — programmatic callers
+  can catch on type. Shared by `Element` (core) and `make-element-fn`."
+  [tag props]
+  (when (nil? tag)
+    (throw (ex-info "Element requires a :tag prop"
+                    {:type ::missing-tag :props props})))
+  (clj->js-props props :tag))
+
 ;; Custom renderer support
 
 (defn make-element-fn
@@ -224,10 +241,7 @@
   the provided renderer instead of react/createElement."
   [renderer]
   (fn [{:keys [tag] :as props} & children]
-    (when (nil? tag)
-      (throw (ex-info "Element requires a :tag prop"
-                      {:type ::missing-tag :props props})))
-    (apply renderer tag (clj->js-props props :tag) (to-array children))))
+    (apply renderer tag (element-props tag props) (to-array children))))
 
 (defn make-create-cljs-element-fn
   "Create a create-cljs-element-like function bound to a specific renderer.
@@ -244,14 +258,30 @@
 
 (defn forward-ref
   "Wrap a CLJS component fn with React.forwardRef.
-  The forwarded ref is wrapped in a RefAtom and injected as :ref in the props map."
+
+  The forwarded ref is wrapped in a RefAtom and injected as :ref in the props
+  map. Callers may supply the ref via either path:
+
+  - Direct CLJS call: (MyComp {:ref some-ref ...}) — :ref lives inside the CLJS
+    props map. RefAtom values are unwrapped to their raw React ref before being
+    handed to the component body.
+  - Raw createElement: (react/createElement MyComp #js {:ref some-ref ...}) —
+    React.forwardRef receives the ref via its second argument.
+
+  React's top-level ref takes precedence; the cljsProps :ref is the fallback
+  path that makes the direct-call API work."
   [component-fn]
   (propagate-display-name!
     component-fn
     (react/forwardRef
-      (fn [js-props ref]
-        (component-fn
-          (assoc (unwrap-cljs-props js-props) :ref (hook/->RefAtom ref)))))))
+      (fn [js-props react-ref]
+        (let [props (unwrap-cljs-props js-props)
+              raw   (or react-ref
+                        (let [r (:ref props)]
+                          (if (satisfies? hook/IReactRef r)
+                            (hook/-react-ref r)
+                            r)))]
+          (component-fn (assoc props :ref (hook/->RefAtom raw))))))))
 
 (defn memo-forward-ref
   "Combine forward-ref + React.memo with CLJS equality comparison."
