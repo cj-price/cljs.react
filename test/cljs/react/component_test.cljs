@@ -96,6 +96,38 @@
       (is (false? (gobj/get js-obj "b")))
       (is (= 0 (gobj/get js-obj "c"))))))
 
+(deftest clj->js-props-deep-nesting-test
+  (testing "maps nest arbitrarily deep — every level becomes a JS object"
+    (let [js-obj (component/clj->js-props
+                   {:a {:b {:c {:d {:e "leaf"}}}}})
+          a (gobj/get js-obj "a")
+          b (gobj/get a "b")
+          c (gobj/get b "c")
+          d (gobj/get c "d")]
+      (is (object? a))
+      (is (object? b))
+      (is (object? c))
+      (is (object? d))
+      (is (= "leaf" (gobj/get d "e"))))))
+
+(deftest clj->js-props-js-object-passthrough-test
+  (testing "a #js object inside a CLJS map is preserved by reference"
+    ;; Lets consumers drop down to #js when they need JS-only data (e.g. for
+    ;; libraries with specific JS shape requirements) without forcing a round-
+    ;; trip through CLJS.
+    (let [inner #js {:already "js"}
+          js-obj (component/clj->js-props {:style inner})]
+      (is (identical? inner (gobj/get js-obj "style"))))))
+
+(deftest clj->js-props-mixed-js-inside-cljs-test
+  (testing "a CLJS map containing a #js sub-object preserves the JS sub-object"
+    (let [raw   #js {:nested "raw"}
+          js-obj (component/clj->js-props
+                   {:wrap {:cljs "inner" :raw raw}})
+          wrap   (gobj/get js-obj "wrap")]
+      (is (= "inner" (gobj/get wrap "cljs")))
+      (is (identical? raw (gobj/get wrap "raw"))))))
+
 (deftest clj->js-props-nested-empty-map-test
   (testing "nested empty maps round-trip as empty JS objects (not nil)"
     (let [js-obj (component/clj->js-props {:style {}})

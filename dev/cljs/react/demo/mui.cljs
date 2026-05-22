@@ -68,10 +68,10 @@
 ;; ── 3. Card Nesting ──────────────────────────────────────────────────────────
 
 (defnc CardDemo []
-  (Element {:tag MuiCard :sx #js {:maxWidth 360}}
+  (Element {:tag MuiCard :sx {:maxWidth 360}}
     (Element {:tag MuiCardContent}
       (Element {:tag MuiTypography :variant "h6" :component "div"
-                :sx #js {:mb 1}}
+                :sx {:mb 1}}
         "ClojureScript + MUI")
       (Element {:tag MuiTypography :variant "body2" :color "text.secondary"}
         "MUI components composed with the Element DSL. CardContent and "
@@ -81,7 +81,7 @@
       (Element {:tag MuiButton :size "small"} "Share"))))
 
 (def card-code
-  "(Element {:tag MuiCard :sx #js {:maxWidth 360}}
+  "(Element {:tag MuiCard :sx {:maxWidth 360}}
   (Element {:tag MuiCardContent}
     (Element {:tag MuiTypography :variant \"h6\" :component \"div\"}
       \"ClojureScript + MUI\")
@@ -136,7 +136,7 @@
 (defnc StackDemo []
   (Element {:tag MuiStack :spacing 2}
     (Element {:tag MuiStack :direction "row" :spacing 1 :alignItems "center" :flexWrap "wrap" :useFlexGap true}
-      (Element {:tag MuiTypography :variant "subtitle2" :sx #js {:minWidth 60}} "Chips:")
+      (Element {:tag MuiTypography :variant "subtitle2" :sx {:minWidth 60}} "Chips:")
       (Element {:tag MuiChip :label "Alpha"   :color "primary"})
       (Element {:tag MuiChip :label "Beta"    :color "secondary"})
       (Element {:tag MuiChip :label "Gamma"   :variant "outlined"})

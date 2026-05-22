@@ -41,7 +41,7 @@
         (Pre {:className "language-clojure"}
           (Code {:className "language-clojure"
                  :dangerouslySetInnerHTML
-                 #js {:__html (.highlight Prism code
-                                (.-clojure (.-languages Prism))
-                                "clojure")}})))
+                 {:__html (.highlight Prism code
+                            (.-clojure (.-languages Prism))
+                            "clojure")}})))
       (Div {:className "demo-output"} children))))

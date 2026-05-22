@@ -97,6 +97,36 @@
       (is (some? e))
       (is (= :cljs.react.component/missing-tag (:type (ex-data e)))))))
 
+(deftest element-cljs-map-style-test
+  (testing "CLJS maps in props auto-convert — :style {:color ...} reaches the DOM"
+    ;; Locks in the library's promise: consumers should never need `#js` for
+    ;; prop values. Sweep of `dev/cljs/react/demo/` removed defensive #js;
+    ;; this test catches a regression.
+    (let [result (render (Element {:tag "div"
+                                   :style {:color "rgb(255, 0, 0)"
+                                           :marginTop "4px"}}
+                           "hi"))
+          el (.. result -container -firstChild)]
+      (is (= "rgb(255, 0, 0)" (.. el -style -color)))
+      (is (= "4px" (.. el -style -marginTop)))
+      (cleanup))))
+
+(deftest element-cljs-map-prop-to-js-component-test
+  (testing "passing a CLJS map prop to a JS component reaches it as a JS object"
+    ;; Verifies `(Element {:tag JSComp :sx {...}})` works — the same shape the
+    ;; demo uses for MUI without `#js`. JSComp here is a plain function component
+    ;; that pulls .-sx off its js props.
+    (let [captured (atom nil)
+          JSComp (fn [^js props]
+                   (reset! captured (.-sx props))
+                   (react/createElement "div" nil "ok"))]
+      (render (Element {:tag JSComp :sx {:maxWidth 360 :mb 1}}))
+      (let [^js sx @captured]
+        (is (some? sx))
+        (is (= 360 (.-maxWidth sx)))
+        (is (= 1   (.-mb sx))))
+      (cleanup))))
+
 (deftest element-nested-children-test
   (testing "Element handles nested Elements"
     (let [result (render (Element {:tag "div"}

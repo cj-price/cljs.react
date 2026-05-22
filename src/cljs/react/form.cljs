@@ -20,12 +20,26 @@
    :submit-error nil})
 
 (defn form-atom
-  "Return the mutable form-state atom for direct inspection/mutation (testing, devtools)."
+  "Return the raw form-state atom for direct inspection/mutation.
+
+  Dereferencing yields a snapshot map (this shape is part of the public
+  contract):
+    :values        — current values map
+    :errors        — map of field-key → error
+    :dirty         — set of field-keys the user has changed
+    :touched       — set of field-keys that have been blurred or submitted
+    :validating?   — true while an async validator is in flight
+    :submitting?   — true while a submit is in flight
+    :submitted?    — true after a submit completes successfully
+    :submit-error  — error from the most recent failed submit, or nil
+
+  Advanced — prefer `use-form-meta` / `use-field` for reactive reads."
   [^FormHandle h]
   (.-form-atom h))
 
 (defn form-opts
-  "Return the current :use-form opts map (always fresh)."
+  "Return the current `use-form` opts map. Reads through to the handle's
+  internal ref so callers always see the latest opts, even mid-render."
   [^FormHandle h]
   @(.-opts-ref h))
 
@@ -51,8 +65,9 @@
   (swap! (.-form-atom h) assoc :values values))
 
 (defn set-errors!
-  "Replace the form's `:errors` map. Marks every keyed field as touched so the
-  errors are visible to `use-field` consumers."
+  "Replace the form's `:errors` map. Keys present in `errors` are also added
+  to `:touched` so the errors are surfaced by `use-field` without the user
+  having to blur each field first."
   [^FormHandle h errors]
   (swap! (.-form-atom h)
          (fn [s]
@@ -247,35 +262,42 @@
     @handle-ref))
 
 (defn- use-field*
-  "Internal: shared logic for text and checkbox fields."
+  "Internal: shared logic for text and checkbox fields. Always returns both
+  :value and :checked so callers can destructure uniformly regardless of
+  field type."
   [^FormHandle handle field-key {:keys [checkbox?]}]
   (let [snap (hook/use-selector (.-form-atom handle)
                            (fn [o n] (field-diff? o n field-key))
                            (fn [s] (field-snap s field-key))
                            [field-key])
         ^js handlers (ensure-handlers! handle field-key checkbox?)
-        base {:error    (:error snap)
-              :dirty    (:dirty snap)
-              :onChange (.-onChange handlers)
-              :onBlur   (.-onBlur handlers)}]
-    (if checkbox?
-      (assoc base :checked (boolean (:value snap)))
-      (assoc base :value (:value snap)))))
+        value (:value snap)]
+    {:value    value
+     ;; `true?` (not `boolean`) so :checked is only true for an explicit `true`
+     ;; value. Empty strings — truthy in CLJS — would otherwise read as checked.
+     :checked  (true? value)
+     :error    (:error snap)
+     :dirty    (:dirty snap)
+     :onChange (.-onChange handlers)
+     :onBlur   (.-onBlur handlers)}))
 
 (defn use-field
   "Subscribe to a single field. Returns a map with:
-    :value    — current value (omitted for checkboxes; see :checked)
-    :checked  — checkbox state (only when opts :checkbox? is true)
+    :value    — current value (use for text/select inputs)
+    :checked  — true only when :value is the literal boolean `true`
+                (use for checkbox inputs)
     :error    — error string, or nil while the field is untouched
     :dirty    — boolean: has the user changed this field since reset?
     :onChange — DOM change handler (extracts e.target.value / .checked)
     :onBlur   — DOM blur handler (marks the field touched)
 
-  Only re-renders when this specific field's value, error, dirty, or touched
-  state changes.
+  Both :value and :checked are always present so callers can destructure
+  uniformly; only one is meaningful per field type. Re-renders only when this
+  specific field's value, error, dirty, or touched state changes.
 
   opts map (optional):
-    :checkbox? - true for checkbox fields (reads e.target.checked, returns :checked key)
+    :checkbox? - true for checkbox fields. Switches :onChange to read
+                 e.target.checked instead of e.target.value.
 
   Radio groups: no dedicated mode — use the field as a string and set each
   input's :checked to (= field-value option) and :value to option, e.g.

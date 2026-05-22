@@ -55,128 +55,334 @@
    (apply component/*create-element* tag (component/element-props tag props) c1 c2 c3 more)))
 
 ;; Re-export ref utilities
-(def ^{:doc "Extract the raw React ref object from a RefAtom; use when passing refs to DOM elements or JS components."}
+(def ^{:doc "Extract the raw React ref object from a RefAtom. Hand the raw ref to DOM
+  elements (`:ref (react-ref my-ref)`) or to JS components that don't speak
+  the RefAtom protocols; the RefAtom itself is still useful for `deref` /
+  `reset!` reads from CLJS."}
   react-ref hook/react-ref)
-(def ^{:doc "Wrap a CLJS component fn with React.forwardRef. The forwarded ref is wrapped in a RefAtom and injected as :ref in the props map."}
+(def ^{:doc "Wrap a CLJS component fn with React.forwardRef. The forwarded ref is
+  wrapped in a RefAtom and injected as `:ref` in the props map, so the body
+  can `deref` / `reset!` it like any other RefAtom.
+
+  Callers may supply the ref via either path:
+    - Direct CLJS call: (MyComp {:ref some-ref ...}) — :ref lives inside the
+      CLJS props map.
+    - Raw createElement: (react/createElement MyComp #js {:ref some-ref ...}).
+
+  React's top-level ref takes precedence; the cljsProps :ref is the fallback
+  path that makes the direct-call API work."}
   forward-ref component/forward-ref)
 
 ;; Re-export hooks
-(def ^{:doc "React.useEffect. Pass effect-fn and optional deps vector; structural equality is used on deps."}
+(def ^{:doc "React.useEffect with CLJS structural equality on the deps vector.
+
+  Args:
+    effect-fn - 0-arity fn run after commit; may return a cleanup fn (or nil)
+    deps      - optional vector of dependencies; the effect re-runs only when
+                `=` on the deps vector changes.
+
+  Returns nil. Pass `[]` to run once on mount, omit to run after every render."}
   use-effect hook/use-effect)
-(def ^{:doc "React.useCallback. Memoize a fn across renders using CLJS structural equality on deps."}
+(def ^{:doc "React.useCallback with CLJS structural equality on deps. Returns the same
+  fn reference across renders until `deps` changes.
+
+  Args:
+    f    - the function to memoize
+    deps - optional vector of dependencies"}
   use-callback hook/use-callback)
-(def ^{:doc "React.useMemo. Memoize a computed value across renders using CLJS structural equality on deps."}
+(def ^{:doc "React.useMemo with CLJS structural equality on deps. Calls `f` and caches
+  its return value; re-invokes only when `deps` changes.
+
+  Args:
+    f    - 0-arity fn producing the memoized value
+    deps - optional vector of dependencies"}
   use-memo hook/use-memo)
-(def ^{:doc "React.useLayoutEffect. Like use-effect but runs synchronously after DOM mutations."}
+(def ^{:doc "React.useLayoutEffect — like `use-effect` but fires synchronously after
+  DOM mutations and before the browser paints. Use for reading layout or
+  imperatively positioning elements; prefer `use-effect` otherwise.
+
+  Args:
+    effect-fn - 0-arity fn; may return a cleanup fn (or nil)
+    deps      - optional vector of dependencies"}
   use-layout-effect hook/use-layout-effect)
-(def ^{:doc "React.useRef wrapped as a RefAtom (deref / reset! / swap!). 0-arity initializes to nil."}
+(def ^{:doc "React.useRef wrapped as a RefAtom (supports `deref` / `reset!` / `swap!`).
+  RefAtoms compare equal across renders when they wrap the same underlying
+  React ref, so they're safe to place into hook deps.
+
+  Args:
+    initial - optional initial value (defaults to nil)
+
+  Returns a RefAtom. Use `react-ref` to extract the raw React ref before
+  handing to a DOM element or JS component."}
   use-ref hook/use-ref)
-(def ^{:doc "Customize the handle exposed to parent components when using forward-ref.
+(def ^{:doc "Customize the handle exposed to parent components when using `forward-ref`.
+
+  Args:
+    ref           - the RefAtom received via `forward-ref` props
+    create-handle - 0-arity fn returning the object exposed to the parent
+    deps          - optional vector of dependencies
 
   Usage inside a forward-ref'd component:
     (use-imperative-handle ref
       (fn [] #js {:focus (fn [] (.focus @input-ref))})
-      [])
-
-  Args: a RefAtom (the forwarded ref), a 0-arity fn returning the handle
-  object, and an optional deps vector. Deps follow the standard hook rules
-  (CLJS structural equality)."}
+      [])"}
   use-imperative-handle hook/use-imperative-handle)
 (def ^{:doc "React.useContext. Reads the current value of a React context.
-  The argument is the context object returned by `create-context`."}
+
+  Args:
+    context - the context object returned by `create-context`
+
+  Returns the nearest provided value (or the context's default if no provider
+  is mounted above this component)."}
   use-context hook/use-context)
-(def ^{:doc "React.useId. Generates a unique, stable id suitable for accessibility attributes."}
+(def ^{:doc "React.useId. Returns a stable string id suitable for accessibility
+  attributes (e.g. pairing <label htmlFor> with <input id>). Stable across
+  renders of the same component instance; opaque format."}
   use-id hook/use-id)
-(def ^{:doc "Local component state. Returns a StateAtom that supports deref, reset!, and swap!."}
+(def ^{:doc "Local component state. Returns a StateAtom that supports `deref`, `reset!`,
+  and `swap!`.
+
+  Args:
+    initial - initial value, or a 0-arity fn to lazily compute it on mount
+
+  A fresh StateAtom value is returned each render with the current
+  [value setter] tuple captured (matching React's snapshot semantics — `@s`
+  in a closure reads the value at the render the closure was created in).
+  StateAtoms backed by the same useState slot compare `=`, so they're safe
+  to place into hook deps."}
   use-state hook/use-state)
-(def ^{:doc "Subscribe to a ClojureScript atom. Returns the current value and re-renders only when the value changes; structurally-equal swaps are no-ops."}
+(def ^{:doc "Subscribe to a ClojureScript atom. Returns the current dereffed value and
+  re-renders only when the value changes by `=`. Structurally-equal updates
+  are treated as no-ops — a `swap!` that produces an `=`-equal map won't
+  re-render consumers.
+
+  Args:
+    source - any IWatchable (`atom`, Cursor, etc.)"}
   use-atom hook/use-atom)
-(def ^{:doc "React.useSyncExternalStore. Subscribe to an external store with (fn subscribe [cb]) and (fn get-snapshot [])."}
+(def ^{:doc "React.useSyncExternalStore — subscribe to an external store and return the
+  current snapshot.
+
+  Args:
+    subscribe           - (fn [callback]) invoked once per subscription; must
+                          call `callback` whenever the store changes and return
+                          an unsubscribe fn.
+    get-snapshot        - 0-arity fn returning the current value. Must be
+                          referentially stable for unchanged state — React
+                          tears on identity comparison.
+    get-server-snapshot - optional 0-arity fn returning the SSR snapshot.
+
+  Prefer `use-atom` / `use-selector` for Clojure-atom sources; reach for this
+  only for external (non-atom) stores."}
   use-sync-external-store hook/use-sync-external-store)
-(def ^{:doc "Subscribe to an IWatchable source with a custom diff?/select pair. See cljs.react.hook/use-selector for details."}
+(def ^{:doc "Subscribe to an IWatchable `source`, re-rendering only when `diff?` returns
+  truthy between old/new states.
+
+  Args:
+    source - any IWatchable (atom, cursor, ratom-like) whose value the
+             component depends on.
+    diff?  - (fn [old-state new-state]) — return truthy to schedule a re-render.
+    select - (fn [state]) projects a snapshot out of the current state.
+             Equal projections (`=`) return the cached reference; required by
+             React's tearing checks under useSyncExternalStore.
+    deps   - vector of selector parameters whose change should rebuild the
+             subscription. Use `[]` for permanent subscriptions.
+
+  Returns the most recent `(select state)`."}
   use-selector hook/use-selector)
-(def ^{:doc "Returns [is-pending? start-transition] for marking updates as non-urgent.
+(def ^{:doc "React.useTransition. Returns `[pending? start-transition]`:
+    - pending?         - true while a transition is in flight
+    - start-transition - (fn [thunk]) marks the updates run inside `thunk` as
+                         non-urgent so React can keep the UI responsive.
 
   Usage:
     (let [[pending? start-transition] (use-transition)]
       (Element {:tag \"button\"
                 :onClick #(start-transition (fn [] (reset! state :slow)))}
-        (if pending? \"…\" \"Go\")))
-
-  Wrap expensive state updates in start-transition to keep the UI responsive."}
+        (if pending? \"…\" \"Go\")))"}
   use-transition hook/use-transition)
-(def ^{:doc "React.useDeferredValue. Returns a deferred version of the supplied value that lags slightly behind during expensive updates."}
+(def ^{:doc "React.useDeferredValue. Returns a deferred version of `value` that lags
+  slightly behind during expensive updates, letting the UI stay responsive
+  while the deferred copy catches up. Useful for piping a fast-changing input
+  into an expensive list/visualisation."}
   use-deferred-value hook/use-deferred-value)
 
 ;; React primitives
 (defn create-context
-  "Create a React context with an optional default value."
+  "Create a React context.
+
+  Args:
+    default-value - optional value returned by `use-context` when no
+                    `<Context.Provider>` is mounted above the consumer.
+                    Defaults to nil.
+
+  Returns the context object — hand it to `use-context` to read, or use its
+  `.-Provider` to install a value (most callers prefer `DBProvider` /
+  ad-hoc Providers built on top of `create-context`)."
   ([] (react/createContext nil))
   ([default-value] (react/createContext default-value)))
 
-(def ^{:doc "React.Fragment — group children without adding a DOM wrapper."}
+(def ^{:doc "React.Fragment — render children without adding a DOM wrapper. Use as the
+  :tag on an Element when you need to return multiple siblings without an
+  enclosing <div>: (Element {:tag Fragment} child-1 child-2)."}
   Fragment react/Fragment)
 
-(def ^{:doc "React.Suspense — render a fallback while descendants suspend."}
+(def ^{:doc "React.Suspense — render a fallback while descendants suspend (e.g. while a
+  lazy-loaded component or a suspending data hook is pending).
+
+  Props map:
+    :fallback - element rendered while any descendant is suspended.
+
+  Usage:
+    (Element {:tag Suspense :fallback (Element {:tag \"div\"} \"Loading…\")}
+      (LazyChild))"}
   Suspense react/Suspense)
 
 ;; Re-export ErrorBoundary
-(def ^{:doc "Render children inside a React error boundary. Props: :fallback (element or (fn [err] element)) and optional :on-error (fn [err info])."}
+(def ^{:doc "Render children inside a React error boundary.
+
+  Props map:
+    :fallback  — element value, or a 1-arity fn (fn [error] -> element) called
+                 with the thrown error. Required. NOTE: a `defnc` component is
+                 itself a function, so passing one directly will invoke it with
+                 the error as its props (almost never what you want). Wrap it:
+                 `:fallback (fn [err] (MyFallback {:error err}))`.
+    :on-error  — optional (fn [error info] ...) invoked in componentDidCatch,
+                 useful for logging/telemetry.
+
+  Usage:
+    (ErrorBoundary
+      {:fallback (fn [err]
+                   (Element {:tag \"div\" :role \"alert\"}
+                     (ex-message err)))}
+      (RiskyChild))
+
+  Tip: give the fallback markup `:role \"alert\"` so screen readers announce
+  the error when it appears."}
   ErrorBoundary error-boundary/ErrorBoundary)
 
 ;; Re-export db utilities
-(def ^{:doc "Provide a database context for child components. Usage: (DBProvider {:initial-value {...}} child1 child2 ...)"}
+(def ^{:doc "Provide a database context for child components — installs a single
+  CLJS atom that descendants can read/write via `use-db` / `use-db-atom`.
+
+  Props map:
+    :initial-value - the initial db value (any CLJS data). Captured once on
+                     mount; later re-renders with a different :initial-value
+                     do not replace the running atom.
+
+  Usage:
+    (DBProvider {:initial-value {:user nil :todos []}}
+      (App))"}
   DBProvider db/DBProvider)
-(def ^{:doc "Subscribe to the db. Returns a Cursor (deref / reset! / swap!) that re-renders only when the value at path changes. 0-arity is the root cursor; 1-arity takes a vector path."}
+(def ^{:doc "Subscribe to the db and return a Cursor scoped to `path`.
+
+  Arities:
+    0-arity     - root cursor; `@cursor` is the whole db; `reset!`/`swap!`
+                  replace the root value.
+    (use-db path) - cursor scoped to a vector path; an empty vector is
+                  equivalent to the 0-arity root cursor.
+
+  Path must be a vector; non-vector paths throw ex-info
+  `:type :cljs.react.db/invalid-cursor-path`.
+
+  Cursor identity is memoized on `path` — `=`-equal paths return the same
+  Cursor across renders, so the result is safe in `use-effect` / `use-memo`
+  deps. The component re-renders only when the value at `path` changes.
+
+  Throws ex-info `:type :cljs.react.db/no-provider` if called outside a
+  `DBProvider`."}
   use-db db/use-db)
-(def ^{:doc "Return the raw db atom from context. Does not subscribe — use use-db for reactive reads."}
+(def ^{:doc "Return the raw db atom from context. Does not subscribe — `use-db` is
+  the right primitive for reactive reads. Use this when you need to imperatively
+  add a watch, snapshot the whole db once, or hand the atom to a non-reactive
+  helper.
+
+  Throws ex-info `:type :cljs.react.db/no-provider` if called outside a
+  `DBProvider`."}
   use-db-atom db/use-db-atom)
 
 ;; Re-export form utilities
-(def ^{:doc "Create a form handle. Returns a FormHandle — pass it to use-field /
-  use-form-meta / on-submit to drive a form.
+(def ^{:doc "Create a form handle owning the form-state atom. Pass the returned
+  FormHandle to `use-field` / `use-form-meta` to subscribe to slices, and to
+  `on-submit` to build the DOM submit handler.
 
   opts map:
     :values      - initial values map, or a watchable (atom/cursor) for reactive defaults
     :validate    - fn(values) -> errors-map or Promise<errors-map>
     :on-submit   - fn(values) -> nil or Promise
     :validate-on - nil | :submit | :blur. :submit (the default) validates only
-                   on submit; :blur additionally re-validates when a field blurs.
+                   when the form is submitted; :blur additionally re-validates
+                   when a field blurs.
 
-  When :values is a plain map, it is captured ONCE on first render — later
-  re-renders with a new map literal do not reset the form. Pass an atom/cursor
-  if you want un-dirtied fields to follow external changes.
+  When :values is a plain map, it is captured once on first render — later
+  changes to the same key (e.g. props re-rendering with a new :values map)
+  do NOT reset the form. Pass an atom/cursor if you need reactive defaults;
+  un-dirtied fields will then follow changes to the watchable.
 
-  Throws ex-info :type :cljs.react.form/invalid-validate-on if :validate-on
+  Validator and submit failures (both sync throws and async rejections) are
+  funneled into :submit-error and reset :submitting? / :validating? to false.
+  :submit-error is cleared at the start of each new submit.
+
+  Throws ex-info `:type :cljs.react.form/invalid-validate-on` if :validate-on
   is anything other than nil, :submit, or :blur."}
   use-form form/use-form)
-(def ^{:doc "Subscribe to a single field. Re-renders only when this field's
-  value, error, dirty, or touched state changes.
-
-  Returns a map with keys:
-    :value    — current value (omitted when opts :checkbox? is true)
-    :checked  — boolean (only when opts :checkbox? is true)
+(def ^{:doc "Subscribe to a single field. Returns a map with:
+    :value    — current value (use for text/select inputs)
+    :checked  — true only when :value is the literal boolean `true`
+                (use for checkbox inputs)
     :error    — error string, or nil while the field is untouched
     :dirty    — boolean: has the user changed this field since reset?
     :onChange — DOM change handler (extracts e.target.value / .checked)
     :onBlur   — DOM blur handler (marks the field touched)
 
-  opts map (optional): :checkbox? — reads e.target.checked and returns :checked
-  instead of :value."}
+  Both :value and :checked are always present so callers can destructure
+  uniformly; only one is meaningful per field type. Re-renders only when this
+  specific field's value, error, dirty, or touched state changes.
+
+  opts map (optional):
+    :checkbox? - true for checkbox fields. Switches :onChange to read
+                 e.target.checked instead of e.target.value.
+
+  Radio groups: no dedicated mode — use the field as a string and set each
+  input's :checked to (= field-value option) and :value to option, e.g.
+  (Element {:tag \"input\" :type \"radio\" :name \"color\" :value \"red\"
+            :checked (= (:value field) \"red\") :onChange (:onChange field)})."}
   use-field form/use-field)
-(def ^{:doc "Subscribe to form meta state. Returns {:validating? :submitting? :submitted? :errors :submit-error}."}
+(def ^{:doc "Subscribe to form meta state (everything except :values).
+  Returns `{:validating? :submitting? :submitted? :errors :submit-error}`.
+  Re-renders only when meta state changes."}
   use-form-meta form/use-form-meta)
-(def ^{:doc "Return an onSubmit event handler for the form. 1-arity uses :on-submit from opts; 2-arity overrides with a submit fn."}
+(def ^{:doc "Returns an onSubmit event handler.
+
+  Arities:
+    (on-submit handle)            - uses :on-submit from opts (read at event
+                                    time, always fresh).
+    (on-submit handle submit-fn)  - override with a specific submit fn.
+
+  Both arities call `.preventDefault` on the event, run validation, and then
+  invoke the submit fn with the current :values. While a submit is in flight
+  (:submitting? true), further submits are ignored — clicking the submit
+  button twice will not run on-submit twice."}
   on-submit form/on-submit)
-(def ^{:doc "Reset the form to its initial values, clearing errors, dirty/touched, and submit state. 2-arity resets to supplied values."}
+(def ^{:doc "Reset the form to its initial values, clearing errors, dirty/touched flags,
+  and submit state.
+
+  Arities:
+    (reset-form! handle)         - reset to the initial :values from opts.
+    (reset-form! handle values)  - reset to the supplied values map instead."}
   reset-form! form/reset-form!)
-(def ^{:doc "Replace the form's :values map. Does not clear errors or flags."}
+(def ^{:doc "Replace the form's `:values` map. Does not touch errors or any flags
+  (`:dirty`, `:touched`, `:submitting?`, ...) — call `reset-form!` for that."}
   set-values! form/set-values!)
-(def ^{:doc "Replace the form's :errors map. Keys with errors are also marked touched so use-field surfaces them."}
+(def ^{:doc "Replace the form's `:errors` map. Keys present in `errors` are also added
+  to `:touched` so the errors are surfaced by `use-field` without the user
+  having to blur each field first."}
   set-errors! form/set-errors!)
-(def ^{:doc "Clear all field errors and any :submit-error."}
+(def ^{:doc "Clear all field errors and any `:submit-error`. Does not change `:values`,
+  `:dirty`, or `:touched`."}
   clear-errors! form/clear-errors!)
-(def ^{:doc "Mark a field as touched so its error becomes visible to use-field."}
+(def ^{:doc "Mark a field as touched so its error becomes visible to `use-field`.
+  Useful for surfacing a server-side error tied to a specific field, in
+  combination with `set-errors!`."}
   touch-field! form/touch-field!)
 
 ;; Form escape hatches — for testing, devtools, or custom integrations.

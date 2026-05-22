@@ -54,20 +54,47 @@
     (.-arr state)))
 
 (defn use-effect
+  "React.useEffect with CLJS structural equality on the deps vector.
+
+  Args:
+    effect-fn - 0-arity fn run after commit; may return a cleanup fn (or nil)
+    deps      - optional vector of dependencies; the effect re-runs only when
+                `=` on the deps vector changes.
+
+  Returns nil. Pass `[]` to run once on mount, omit to run after every render."
   ([effect-fn]
    (react/useEffect effect-fn))
   ([effect-fn deps]
    (react/useEffect effect-fn (cljs-deps deps))))
 
 (defn use-callback
+  "React.useCallback with CLJS structural equality on deps. Returns the same
+  fn reference across renders until `deps` changes.
+
+  Args:
+    f    - the function to memoize
+    deps - optional vector of dependencies"
   ([f] (react/useCallback f))
   ([f deps] (react/useCallback f (cljs-deps deps))))
 
 (defn use-memo
+  "React.useMemo with CLJS structural equality on deps. Calls `f` and caches
+  its return value; re-invokes only when `deps` changes.
+
+  Args:
+    f    - 0-arity fn producing the memoized value
+    deps - optional vector of dependencies"
   ([f] (react/useMemo f))
   ([f deps] (react/useMemo f (cljs-deps deps))))
 
 (defn use-layout-effect
+  "React.useLayoutEffect — like `use-effect` but fires synchronously after
+  DOM mutations and before the browser paints. Use for reading layout or
+  imperatively positioning elements; prefer `use-effect` otherwise.
+
+  Args:
+    effect-fn - 0-arity fn; may return a cleanup fn (or nil)
+    deps      - optional vector of dependencies"
   ([effect-fn]
    (react/useLayoutEffect effect-fn))
   ([effect-fn deps]
@@ -100,6 +127,15 @@
   (-hash [_] (goog/getUid ref)))
 
 (defn use-ref
+  "React.useRef wrapped as a RefAtom (supports `deref` / `reset!` / `swap!`).
+  RefAtoms compare equal across renders when they wrap the same underlying
+  React ref, so they're safe to place into hook deps.
+
+  Args:
+    initial - optional initial value (defaults to nil)
+
+  Returns a RefAtom. Use `react-ref` to extract the raw React ref before
+  handing to a DOM element or JS component."
   ([]        (RefAtom. (react/useRef nil)))
   ([initial] (RefAtom. (react/useRef initial))))
 
@@ -110,7 +146,17 @@
   (-react-ref ref-atom))
 
 (defn use-imperative-handle
-  "Customize the handle exposed to parent components when using forward-ref."
+  "Customize the handle exposed to parent components when using `forward-ref`.
+
+  Args:
+    ref           - the RefAtom received via `forward-ref` props
+    create-handle - 0-arity fn returning the object exposed to the parent
+    deps          - optional vector of dependencies
+
+  Usage inside a forward-ref'd component:
+    (use-imperative-handle ref
+      (fn [] #js {:focus (fn [] (.focus @input-ref))})
+      [])"
   ([ref create-handle]
    (react/useImperativeHandle (-react-ref ref) create-handle))
   ([ref create-handle deps]
@@ -121,20 +167,37 @@
 (def ^:no-doc use-id      react/useId)
 
 (defn use-sync-external-store
-  "Subscribe to an external store.
+  "React.useSyncExternalStore — subscribe to an external store and return the
+  current snapshot.
 
-  - subscribe: (fn [callback] ...) - called with a callback that should be invoked
-    when the store changes. Must return an unsubscribe function.
-  - get-snapshot: (fn [] ...) - returns the current value of the store.
-  - get-server-snapshot: (fn [] ...) - optional, returns the snapshot for server rendering."
+  Args:
+    subscribe           - (fn [callback]) invoked once per subscription; must
+                          call `callback` whenever the store changes and return
+                          an unsubscribe fn.
+    get-snapshot        - 0-arity fn returning the current value. Must be
+                          referentially stable for unchanged state — React tears
+                          on identity comparison, so structurally-equal but
+                          freshly-allocated returns will cause infinite renders.
+    get-server-snapshot - optional 0-arity fn returning the SSR snapshot.
+
+  Returns the current snapshot. Prefer `use-atom` / `use-selector` for
+  Clojure-atom sources; reach for this only for external (non-atom) stores."
   ([subscribe get-snapshot]
    (react/useSyncExternalStore subscribe get-snapshot))
   ([subscribe get-snapshot get-server-snapshot]
    (react/useSyncExternalStore subscribe get-snapshot get-server-snapshot)))
 
 (defn use-transition
-  "Returns [is-pending start-transition] for marking updates as non-urgent.
-  Wrap state updates in start-transition to keep the UI responsive."
+  "React.useTransition. Returns `[pending? start-transition]`:
+    - pending?         - true while a transition is in flight
+    - start-transition - (fn [thunk]) marks the updates run inside `thunk` as
+                         non-urgent so React can keep the UI responsive.
+
+  Usage:
+    (let [[pending? start-transition] (use-transition)]
+      (Element {:tag \"button\"
+                :onClick #(start-transition (fn [] (reset! state :slow)))}
+        (if pending? \"…\" \"Go\")))"
   []
   (let [arr (react/useTransition)]
     [(aget arr 0) (aget arr 1)]))
@@ -156,12 +219,20 @@
 
 (defn use-selector
   "Subscribe to an IWatchable `source`, re-rendering only when `diff?` returns
-  truthy between old/new states. `select` projects a snapshot out of the
-  current state; equal projections return the cached reference (required for
-  useSyncExternalStore render stability).
+  truthy between old/new states.
 
-  `deps` controls when the subscription identity changes — pass [] for a
-  permanent subscription, or a vector of selector parameters otherwise."
+  Args:
+    source - any IWatchable (atom, cursor, ratom-like) whose value the
+             component depends on.
+    diff?  - (fn [old-state new-state]) — return truthy to schedule a re-render.
+             Cheap-but-correct beats deep `not=` for hot paths.
+    select - (fn [state]) projects a snapshot out of the current state.
+             Equal projections (`=`) return the cached reference; this is
+             required by React's tearing checks under useSyncExternalStore.
+    deps   - vector of selector parameters whose change should rebuild the
+             subscription. Use `[]` for permanent subscriptions.
+
+  Returns the most recent `(select state)`."
   [source diff? select deps]
   ;; Cache holds the last (source-state, projected-snapshot) pair. React calls
   ;; getSnapshot multiple times per render (commit + tearing checks). If the
@@ -201,8 +272,12 @@
     (use-sync-external-store subscribe get-snapshot)))
 
 (defn use-atom
-  "Subscribe to a ClojureScript atom. Returns the current value and re-renders
-  only when the value changes. Structurally-equal updates are treated as
-  no-ops — a swap! that produces a `=`-equal map won't re-render consumers."
+  "Subscribe to a ClojureScript atom. Returns the current dereffed value and
+  re-renders only when the value changes by `=`. Structurally-equal updates
+  are treated as no-ops — a `swap!` that produces an `=`-equal map won't
+  re-render consumers.
+
+  Args:
+    source - any IWatchable (`atom`, Cursor, etc.)"
   [source]
   (use-selector source not= identity [source]))

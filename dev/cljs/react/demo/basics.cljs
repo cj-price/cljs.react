@@ -27,36 +27,36 @@
 (defnc NumberedList
   [{:keys [children]}]
   (Element {:tag "ol"
-            :style #js {:display "flex"
-                        :flexDirection "column"
-                        :gap "0.5rem"
-                        :padding 0
-                        :margin 0
-                        :listStyle "none"}}
+            :style {:display "flex"
+                    :flexDirection "column"
+                    :gap "0.5rem"
+                    :padding 0
+                    :margin 0
+                    :listStyle "none"}}
     (for [[idx item] (map-indexed vector children)]
       (Element {:tag "li"
                 :key idx
-                :style #js {:display "flex"
-                            :alignItems "center"
-                            :gap "0.75rem"
-                            :padding "0.5rem 0.75rem"
-                            :background "#f9fafb"
-                            :border "1px solid #e5e7eb"
-                            :borderRadius "0.5rem"}}
+                :style {:display "flex"
+                        :alignItems "center"
+                        :gap "0.75rem"
+                        :padding "0.5rem 0.75rem"
+                        :background "#f9fafb"
+                        :border "1px solid #e5e7eb"
+                        :borderRadius "0.5rem"}}
         (Element {:tag "span"
-                  :style #js {:display "inline-flex"
-                              :alignItems "center"
-                              :justifyContent "center"
-                              :width "1.5rem"
-                              :height "1.5rem"
-                              :borderRadius "9999px"
-                              :background "#f97316"
-                              :color "white"
-                              :fontSize "0.75rem"
-                              :fontWeight 700
-                              :flexShrink 0}}
+                  :style {:display "inline-flex"
+                          :alignItems "center"
+                          :justifyContent "center"
+                          :width "1.5rem"
+                          :height "1.5rem"
+                          :borderRadius "9999px"
+                          :background "#f97316"
+                          :color "white"
+                          :fontSize "0.75rem"
+                          :fontWeight 700
+                          :flexShrink 0}}
           (inc idx))
-        (Element {:tag "div" :style #js {:flex 1 :fontSize "0.9rem" :color "#374151"}}
+        (Element {:tag "div" :style {:flex 1 :fontSize "0.9rem" :color "#374151"}}
           item)))))
 
 (defnc IterChildrenDemo []
@@ -68,30 +68,30 @@
 ;; ── Vector of elements passed as a prop ──────────────────────────────────────
 
 (def ^:private breadcrumb-link-style
-  #js {:color "#f97316"
-       :textDecoration "none"
-       :fontWeight 500})
+  {:color "#f97316"
+   :textDecoration "none"
+   :fontWeight 500})
 
 (def ^:private breadcrumb-current-style
-  #js {:color "#374151"
-       :fontWeight 600})
+  {:color "#374151"
+   :fontWeight 600})
 
 (defnc Breadcrumbs
   [{:keys [items]}]
   (Element {:tag "nav"
-            :style #js {:display "flex"
-                        :flexWrap "wrap"
-                        :alignItems "center"
-                        :gap "0.4rem"
-                        :fontSize "0.9rem"}}
+            :style {:display "flex"
+                    :flexWrap "wrap"
+                    :alignItems "center"
+                    :gap "0.4rem"
+                    :fontSize "0.9rem"}}
     (for [[idx item] (map-indexed vector items)]
       (Element {:tag "span"
                 :key idx
-                :style #js {:display "flex"
-                            :alignItems "center"
-                            :gap "0.4rem"}}
+                :style {:display "flex"
+                        :alignItems "center"
+                        :gap "0.4rem"}}
         (when (pos? idx)
-          (Element {:tag "span" :style #js {:color "#cbd5e1"}} "/"))
+          (Element {:tag "span" :style {:color "#cbd5e1"}} "/"))
         item))))
 
 (defnc VectorPropDemo []
@@ -143,7 +143,7 @@
 
 (defnc ClickDemo []
   (let [clicks (use-state 0)]
-    (Element {:tag "div" :style #js {:display "flex" :gap "0.75rem" :alignItems "center"}}
+    (Element {:tag "div" :style {:display "flex" :gap "0.75rem" :alignItems "center"}}
       (Element {:tag RawButton :label "Click me" :onClick #(swap! clicks inc)})
       (Element {:tag "span"} "Clicks: " @clicks))))
 
@@ -180,18 +180,18 @@
 
 (defnc FocusDemo []
   (let [input-ref (use-ref nil)
-        btn-style #js {:padding "0.5rem 0.9rem"
-                       :border "1px solid #d1d5db"
-                       :borderRadius "0.5rem"
-                       :background "white"
-                       :cursor "pointer"
-                       :fontSize "0.9rem"
-                       :whiteSpace "nowrap"}]
+        btn-style {:padding "0.5rem 0.9rem"
+                   :border "1px solid #d1d5db"
+                   :borderRadius "0.5rem"
+                   :background "white"
+                   :cursor "pointer"
+                   :fontSize "0.9rem"
+                   :whiteSpace "nowrap"}]
     (Element {:tag "div"
-              :style #js {:display "flex"
-                          :flexWrap "wrap"
-                          :gap "0.5rem"
-                          :alignItems "center"}}
+              :style {:display "flex"
+                      :flexWrap "wrap"
+                      :gap "0.5rem"
+                      :alignItems "center"}}
       (Element {:tag RawTextBox
                 :ref input-ref
                 :placeholder "Some text to select"
@@ -244,7 +244,7 @@
     (CodeAndOutput
      {:title "Interop — Using a JS Component"
       :code ";; RawBadge is a plain JS React component\n;; (imagine it came from an npm package).\n;; Pass the reference as :tag — keyword props\n;; are forwarded as flat JS props.\n\n(Element {:tag RawBadge :label \"New\"})\n(Element {:tag RawBadge :label \"Beta\"})\n(Element {:tag RawBadge :label \"Alpha\"})"}
-     (Element {:tag "div" :style #js {:display "flex" :gap "0.5rem" :flexWrap "wrap"}}
+     (Element {:tag "div" :style {:display "flex" :gap "0.5rem" :flexWrap "wrap"}}
        (Element {:tag RawBadge :label "New"})
        (Element {:tag RawBadge :label "Beta"})
        (Element {:tag RawBadge :label "Alpha"})))
@@ -252,7 +252,7 @@
     (CodeAndOutput
      {:title "Interop — Adapting a JS Component"
       :code ";; Wrap the Element call in a plain fn so callers\n;; don't have to keep typing :tag RawBadge.\n\n(defn Badge [props]\n  (Element (assoc props :tag RawBadge)))\n\n(Badge {:label \"New\"})\n(Badge {:label \"Beta\"})\n(Badge {:label \"Alpha\"})"}
-     (Element {:tag "div" :style #js {:display "flex" :gap "0.5rem" :flexWrap "wrap"}}
+     (Element {:tag "div" :style {:display "flex" :gap "0.5rem" :flexWrap "wrap"}}
        (Badge {:label "New"})
        (Badge {:label "Beta"})
        (Badge {:label "Alpha"})))

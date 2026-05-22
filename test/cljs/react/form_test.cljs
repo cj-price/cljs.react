@@ -148,7 +148,9 @@
                                 (form/use-field f :terms {:checkbox? true})))
           field (.. result -result -current)]
       (is (false? (:checked field)))
-      (is (nil? (:value field)))
+      ;; :value is also present (coerced source for :checked) — both keys are
+      ;; always there so destructuring is uniform across field types.
+      (is (contains? field :value))
       (is (fn? (:onChange field)))
       (is (fn? (:onBlur field)))
       ;; Flip via the checkbox onChange path — value should reflect e.target.checked
@@ -160,6 +162,31 @@
               #js {:target #js {:checked false}}))
       (is (false? (:checked (.. result -result -current))))
       (is (false? (form-value @handle-atom :terms))))))
+
+(deftest use-field-uniform-shape-test
+  (testing "use-field always returns both :value and :checked regardless of opts"
+    ;; Both keys present in every shape — destructure once, branch on field
+    ;; semantics, not on key presence.
+    (testing "text field — :checked is false (non-boolean values never check)"
+      (let [{:keys [result]} (render-field {:values {:name "Alice"}} :name)
+            field (.. result -result -current)]
+        (is (contains? field :value))
+        (is (contains? field :checked))
+        (is (= "Alice" (:value field)))
+        (is (false? (:checked field)) "non-boolean values are not :checked")))
+    (testing "empty-string text field — :checked is false"
+      (let [{:keys [result]} (render-field {:values {:name ""}} :name)
+            field (.. result -result -current)]
+        (is (= "" (:value field)))
+        (is (false? (:checked field)) "empty string is not :checked")))
+    (testing "checkbox field — :value is the underlying boolean, :checked mirrors it"
+      (let [result (renderHook #(let [f (form/use-form {:values {:terms true}})]
+                                  (form/use-field f :terms {:checkbox? true})))
+            field (.. result -result -current)]
+        (is (contains? field :value))
+        (is (contains? field :checked))
+        (is (true? (:value field)))
+        (is (true? (:checked field)))))))
 
 ;;; on-blur validation bug fixes
 

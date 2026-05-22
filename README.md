@@ -200,6 +200,127 @@ Note: `Element` is for DOM tags (strings) and plain JS React components — it
 passes props as flat JS objects. For `defnc` components, call them directly
 as shown above so they receive their `cljsProps` wrapper.
 
+## Data shapes
+
+The public types in `cljs.react.core` all support `deref` / `reset!` / `swap!`
+so consumers can treat them like ordinary atoms.
+
+### `StateAtom` — returned by `use-state`
+
+Wraps React's `[value setter]` tuple. A fresh `StateAtom` is allocated per
+render, but two wrappers backed by the same `useState` slot compare equal
+under `=` (setter identity is stable across renders), so a `StateAtom` is safe
+to place into `use-effect` / `use-memo` / `use-callback` deps.
+
+```clojure
+(let [n (use-state 0)]
+  @n           ;; current value
+  (reset! n 1) ;; replace
+  (swap! n inc))
+```
+
+### `RefAtom` — returned by `use-ref` and injected by `forward-ref`
+
+Wraps a React ref. `deref` reads the current `.current`; `reset!` / `swap!`
+write it. Use `react-ref` to extract the raw JS ref when handing it to a DOM
+element or JS component:
+
+```clojure
+(let [r (use-ref nil)]
+  (Element {:tag "input" :ref (react-ref r)})
+  ...
+  (.focus @r))
+```
+
+### `Cursor` — returned by `use-db`
+
+`(use-db)` returns a cursor over the root db; `(use-db [:user :name])` returns
+a cursor scoped to a path. `=`-stable per path, so safe in deps:
+
+```clojure
+(let [user (use-db [:user])
+      name (use-db [:user :name])]
+  @user                                  ;; {:name "Alice", ...}
+  @name                                  ;; "Alice"
+  (swap! user assoc :name "Bob")         ;; writes through the path
+  (reset! name "Carol"))                 ;; equivalent to assoc-in [:user :name]
+```
+
+Calling `use-db` outside a `DBProvider` throws `ex-info` with `:type
+:cljs.react.db/no-provider`.
+
+### `FormHandle` — returned by `use-form`
+
+Opaque. Pass to `use-field` / `use-form-meta` / `on-submit` / `reset-form!`
+etc. The underlying form-state atom is exposed via `form-atom` for testing
+and devtools; deref yields:
+
+```clojure
+{:values        {...}      ;; current values
+ :errors        {...}      ;; field-key → error
+ :dirty         #{...}     ;; field-keys the user has changed
+ :touched       #{...}     ;; field-keys that have been blurred or submitted
+ :validating?   false      ;; true while an async validator is in flight
+ :submitting?   false      ;; true while a submit is in flight
+ :submitted?    false      ;; true after a submit completes successfully
+ :submit-error  nil}       ;; error from the most recent failed submit
+```
+
+`use-field` returns a map with `:value`, `:checked`, `:error`, `:dirty`,
+`:onChange`, and `:onBlur`. Both `:value` and `:checked` are always present so
+destructuring is uniform across field types — pick the one your input needs.
+
+## Troubleshooting
+
+### Do I need `#js` for prop values?
+
+No. `Element` and `defnc` recursively convert CLJS maps to JS objects when
+serializing props. Write `:style {:color "red"}`, `:sx {:maxWidth 360}`, even
+`:dangerouslySetInnerHTML {:__html "..."}` — all idiomatic CLJS maps. `#js`
+is only needed when you're calling `react/createElement` directly (raw JS
+interop).
+
+### `defnc` vs `Element` — which one calls a component?
+
+Call `defnc` components directly. `Element` is for DOM tags (strings) and
+plain JS React components (e.g. MUI exports):
+
+```clojure
+(MyComponent {:key "k" :foo 1})         ;; correct
+(Element {:tag MyComponent :foo 1})     ;; wrong — drops :key + cljsProps wrapper
+(Element {:tag "div"} ...)              ;; correct — DOM
+(Element {:tag MuiCard :sx {...}} ...)  ;; correct — JS component
+```
+
+### `ErrorBoundary` `:fallback` won't render my component
+
+`:fallback` is either a React element or a `(fn [err] element)`. Passing a
+bare `defnc` doesn't work — it would be invoked with the error as a JS prop.
+Wrap it:
+
+```clojure
+(ErrorBoundary
+  {:fallback (fn [err] (MyFallback {:error err}))}
+  ...)
+```
+
+### `use-db` throws on startup
+
+`use-db` must be called from inside a `DBProvider`. The throw is `ex-info`
+with `:type :cljs.react.db/no-provider`. Mount the provider at the root:
+
+```clojure
+(dom/render root (DBProvider {:initial-value {...}} (App)))
+```
+
+### Refs and DOM interop
+
+A `RefAtom` is a CLJS wrapper. To hand it to a non-CLJS consumer (a DOM
+attribute on a JS component, a JS library's `.observe` API, etc.) extract the
+raw React ref with `react-ref`. When passing a ref to another CLJS component
+or a DOM element through `Element`, pass the `RefAtom` directly —
+`clj->js-props` unwraps it for you.
+
 ## Development
 
 Uses `nix-shell` (Node 22, Clojure, Babashka, JDK 17) and `bb` tasks:
