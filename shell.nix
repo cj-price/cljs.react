@@ -4,7 +4,7 @@ pkgs.mkShell {
   buildInputs = with pkgs; [
     # JavaScript tooling
     nodejs_22
-    pnpm
+    pnpm_10
 
     # Clojure tooling
     clojure
