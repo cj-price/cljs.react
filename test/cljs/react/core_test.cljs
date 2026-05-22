@@ -502,6 +502,50 @@
           (cleanup))
         (finally (set! js/console.error orig))))))
 
+(deftest error-boundary-missing-fallback-throws-test
+  (testing "Omitting :fallback (e.g. typo'd key) throws ex-info at construction"
+    (let [thrown (try
+                   (ErrorBoundary {:on-error (fn [_ _])}
+                                  (Element {:tag "span"} "x"))
+                   (catch :default e e))]
+      (is (instance? ExceptionInfo thrown))
+      (is (= :cljs.react.error-boundary/missing-fallback (:type (ex-data thrown))))))
+  (testing "Explicit :fallback nil throws ex-info at construction"
+    (let [thrown (try
+                   (ErrorBoundary {:fallback nil}
+                                  (Element {:tag "span"} "x"))
+                   (catch :default e e))]
+      (is (instance? ExceptionInfo thrown))
+      (is (= :cljs.react.error-boundary/nil-fallback (:type (ex-data thrown)))))))
+
+(deftest error-boundary-throwing-fallback-fn-test
+  (testing "A throwing :fallback fn renders a sentinel instead of crashing the boundary"
+    (let [orig js/console.error
+          err-calls (atom 0)]
+      (set! js/console.error (fn [& _] (swap! err-calls inc)))
+      (try
+        (let [result (render
+                       (ErrorBoundary
+                         {:fallback (fn [_err]
+                                      (throw (js/Error. "fallback render failed")))}
+                         (component/create-cljs-element Throwing {:msg "boom"})))
+              sentinel (.. result -container -firstChild)]
+          (is (some? sentinel) "fallback failure still renders something")
+          (is (= "PRE" (.-tagName sentinel))
+              "sentinel is a <pre> so the failure is visible")
+          (is (re-find #"ErrorBoundary :fallback threw"
+                       (.-textContent sentinel))
+              "sentinel surfaces the fallback's failure")
+          (is (re-find #"fallback render failed"
+                       (.-textContent sentinel))
+              "sentinel surfaces the fallback error message")
+          (is (re-find #"boom" (.-textContent sentinel))
+              "sentinel surfaces the original child error too")
+          (is (pos? @err-calls)
+              "fallback failure is also logged to console.error")
+          (cleanup))
+        (finally (set! js/console.error orig))))))
+
 ;;; StrictMode double-invocation safety
 
 (defn- strict [element]

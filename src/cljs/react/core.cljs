@@ -242,9 +242,18 @@
 
   Props map:
     :fallback  — element value, or a 1-arity fn (fn [error] -> element) called
-                 with the thrown error. Required. NOTE: a `defnc` component is
-                 itself a function, so passing one directly will invoke it with
-                 the error as its props (almost never what you want). Wrap it:
+                 with the thrown error. **Required, must be non-nil** — a missing
+                 or nil `:fallback` throws ex-info `:type ::missing-fallback` /
+                 `::nil-fallback` at element-creation time so a typo'd key
+                 (e.g. `:fall-back`) is loud rather than silently swallowing the
+                 error. If the fallback fn itself throws (e.g. wrong arity, or
+                 the rendered element is malformed), the boundary catches that
+                 too and renders a `<pre>` sentinel with both errors logged to
+                 the console.
+
+                 NOTE: a `defnc` component is itself a function, so passing one
+                 directly will invoke it with the error as its props (almost
+                 never what you want). Wrap it:
                  `:fallback (fn [err] (MyFallback {:error err}))`.
     :on-error  — optional (fn [error info] ...) invoked in componentDidCatch,
                  useful for logging/telemetry.

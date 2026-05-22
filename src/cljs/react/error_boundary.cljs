@@ -35,7 +35,25 @@
             (let [err   (.. this -state -error)
                   props ^js (.-props this)]
               (if err
-                ((.-renderFallback props) err)
+                ;; Guard the fallback render itself: if the user's fallback fn
+                ;; throws (e.g. a zero-arg fn called with one arg, or a broken
+                ;; element produced from the error), the boundary cannot catch
+                ;; its own render error and the whole tree would unmount.
+                ;; Catch here, log both errors, and render a minimal sentinel
+                ;; so the UI shows *something* and the dev console has signal.
+                (try
+                  ((.-renderFallback props) err)
+                  (catch :default fb-err
+                    (js/console.error
+                      "ErrorBoundary :fallback threw while rendering. Original error:"
+                      err
+                      "\nFallback error:" fb-err)
+                    (react/createElement "pre"
+                      #js {:style #js {:color "red" :whiteSpace "pre-wrap"}}
+                      (str "ErrorBoundary :fallback threw: "
+                           (or (.-message fb-err) (str fb-err))
+                           "\n\nOriginal error: "
+                           (or (.-message err) (str err))))))
                 (.-children props)))))))
 
 (set! (.-getDerivedStateFromError EBClass)
@@ -46,9 +64,18 @@
 
   Props map:
     :fallback  — element value, or a 1-arity fn (fn [error] -> element) called
-                 with the thrown error. Required. NOTE: a `defnc` component is
-                 itself a function, so passing one directly will invoke it with
-                 the error as its props (almost never what you want). Wrap it:
+                 with the thrown error. **Required, must be non-nil** — a missing
+                 or nil `:fallback` throws ex-info `:type ::missing-fallback` /
+                 `::nil-fallback` at element-creation time so a typo'd key
+                 (e.g. `:fall-back`) is loud rather than silently swallowing the
+                 error. If the fallback fn itself throws (e.g. wrong arity, or
+                 the rendered element is malformed), the boundary catches that
+                 too and renders a `<pre>` sentinel with both errors logged to
+                 the console.
+
+                 NOTE: a `defnc` component is itself a function, so passing one
+                 directly will invoke it with the error as its props (almost
+                 never what you want). Wrap it:
                  `:fallback (fn [err] (MyFallback {:error err}))`.
     :on-error  — optional (fn [error info] ...) invoked in componentDidCatch,
                  useful for logging/telemetry.
@@ -62,7 +89,15 @@
 
   Tip: give the fallback markup `:role \"alert\"` so screen readers announce
   the error when it appears."
-  [{:keys [fallback on-error]} & children]
+  [{:keys [fallback on-error] :as props} & children]
+  (when-not (contains? props :fallback)
+    (throw (ex-info
+             "ErrorBoundary requires a :fallback prop (an element or 1-arity fn)"
+             {:type ::missing-fallback})))
+  (when (nil? fallback)
+    (throw (ex-info
+             "ErrorBoundary :fallback is nil — pass an element or a 1-arity fn (fn [error] element)"
+             {:type ::nil-fallback})))
   (let [render-fallback (if (fn? fallback)
                           fallback
                           (fn [_err] fallback))]
