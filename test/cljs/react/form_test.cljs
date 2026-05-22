@@ -186,7 +186,16 @@
         (is (contains? field :value))
         (is (contains? field :checked))
         (is (true? (:value field)))
-        (is (true? (:checked field)))))))
+        (is (true? (:checked field)))))
+    ;; Pin `(true? value)` semantics: only an explicit boolean `true` checks.
+    ;; A regression to `(boolean value)` would pass the empty-string case
+    ;; above but would flip these on, so they guard the invariant.
+    (testing "non-canonical truthy values are not :checked"
+      (doseq [v ["true" 1 0 "false" [] {}]]
+        (let [{:keys [result]} (render-field {:values {:terms v}} :terms)
+              field (.. result -result -current)]
+          (is (false? (:checked field))
+              (str "value " (pr-str v) " must not be :checked")))))))
 
 ;;; on-blur validation bug fixes
 

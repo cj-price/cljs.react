@@ -65,15 +65,18 @@
   (swap! (.-form-atom h) assoc :values values))
 
 (defn set-errors!
-  "Replace the form's `:errors` map. Keys present in `errors` are also added
-  to `:touched` so the errors are surfaced by `use-field` without the user
-  having to blur each field first."
+  "Replace the form's `:errors` map. Field-keys with **non-nil** error values
+  are also added to `:touched` so the errors are surfaced by `use-field`
+  without the user having to blur each field first. Nil-valued keys
+  (e.g. `{:email nil}` to clear that error specifically) are not touched —
+  touched-ness tracks user interaction, not error presence."
   [^FormHandle h errors]
   (swap! (.-form-atom h)
          (fn [s]
            (-> s
                (assoc :errors errors)
-               (update :touched into (keys errors))))))
+               (update :touched into
+                       (keep (fn [[k v]] (when (some? v) k)) errors))))))
 
 (defn clear-errors!
   "Clear all field errors and any `:submit-error`."
@@ -274,7 +277,9 @@
         value (:value snap)]
     {:value    value
      ;; `true?` (not `boolean`) so :checked is only true for an explicit `true`
-     ;; value. Empty strings — truthy in CLJS — would otherwise read as checked.
+     ;; value. Empty strings — truthy in CLJS, unlike host JS — would otherwise
+     ;; read as checked. Same goes for `"true"`, `1`, and other non-canonical
+     ;; truthy values: they don't get coerced to a checked state.
      :checked  (true? value)
      :error    (:error snap)
      :dirty    (:dirty snap)

@@ -163,13 +163,13 @@ so screen readers announce the error when it appears:
 
 `defnc` accepts a `:forward-ref` flag that wraps the component with
 `React.forwardRef`. Inside the body, the forwarded ref arrives as a `RefAtom`
-on the `:ref` key of props. Use `react-ref` to extract the raw JS ref object
-when attaching it to a DOM element:
+on the `:ref` key of props. Pass the `RefAtom` directly through `Element` —
+`clj->js-props` unwraps it for you:
 
 ```clojure
 (defnc FancyInput :forward-ref
   [{:keys [ref placeholder]}]
-  (Element {:tag "input" :ref (react-ref ref) :placeholder placeholder}))
+  (Element {:tag "input" :ref ref :placeholder placeholder}))
 
 (defnc Parent []
   (let [input-ref (use-ref nil)]
@@ -222,12 +222,12 @@ to place into `use-effect` / `use-memo` / `use-callback` deps.
 ### `RefAtom` — returned by `use-ref` and injected by `forward-ref`
 
 Wraps a React ref. `deref` reads the current `.current`; `reset!` / `swap!`
-write it. Use `react-ref` to extract the raw JS ref when handing it to a DOM
-element or JS component:
+write it. Pass the `RefAtom` directly to `Element`; `clj->js-props` unwraps
+it. Use `react-ref` only when handing the raw JS ref to a non-CLJS consumer:
 
 ```clojure
 (let [r (use-ref nil)]
-  (Element {:tag "input" :ref (react-ref r)})
+  (Element {:tag "input" :ref r})
   ...
   (.focus @r))
 ```

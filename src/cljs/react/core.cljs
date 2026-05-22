@@ -147,7 +147,9 @@
 
   A fresh StateAtom value is returned each render with the current
   [value setter] tuple captured (matching React's snapshot semantics — `@s`
-  in a closure reads the value at the render the closure was created in).
+  in a closure reads the value at the render the closure was created in,
+  NOT the latest committed value). If you need the latest value inside an
+  async callback or interval, mirror it into a `use-ref` and deref the ref.
   StateAtoms backed by the same useState slot compare `=`, so they're safe
   to place into hook deps."}
   use-state hook/use-state)
@@ -382,9 +384,10 @@
 (def ^{:doc "Replace the form's `:values` map. Does not touch errors or any flags
   (`:dirty`, `:touched`, `:submitting?`, ...) — call `reset-form!` for that."}
   set-values! form/set-values!)
-(def ^{:doc "Replace the form's `:errors` map. Keys present in `errors` are also added
-  to `:touched` so the errors are surfaced by `use-field` without the user
-  having to blur each field first."}
+(def ^{:doc "Replace the form's `:errors` map. Field-keys with non-nil error values
+  are also added to `:touched` so the errors are surfaced by `use-field`
+  without the user having to blur each field first. Nil-valued keys are not
+  touched — touched-ness tracks user interaction, not error presence."}
   set-errors! form/set-errors!)
 (def ^{:doc "Clear all field errors and any `:submit-error`. Does not change `:values`,
   `:dirty`, or `:touched`."}

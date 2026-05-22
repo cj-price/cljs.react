@@ -210,7 +210,9 @@
 
   A fresh StateAtom value is returned each render with the current
   [value setter] tuple captured (matching React's snapshot semantics — `@s`
-  in a closure reads the value at the render the closure was created in).
+  in a closure reads the value at the render the closure was created in,
+  NOT the latest committed value). If you need the latest value inside an
+  async callback or interval, mirror it into a `use-ref` and deref the ref.
   StateAtoms backed by the same useState slot compare equal under `=` (setter
   identity is stable across renders), so a StateAtom is safe to place into
   cljs.react use-effect / use-memo / use-callback deps."
