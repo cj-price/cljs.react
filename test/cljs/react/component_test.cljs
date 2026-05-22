@@ -155,17 +155,33 @@
       (is (array? seq-arr))
       (is (= [10 9 8] (vec seq-arr))))))
 
-(deftest clj->js-props-vector-shallow-test
-  (testing "vector conversion is shallow — elements are not recursively converted"
-    ;; React arrays carry React elements (already JS) or primitives, never CLJS
-    ;; maps; `to-array` skips the recursive walk for speed. This test pins that
-    ;; contract so a future change doesn't quietly add deep conversion.
-    (let [inner  {:id 1}
-          js-obj (component/clj->js-props {:rows [inner]})
+(deftest clj->js-props-vector-deep-test
+  (testing "vector conversion is deep — CLJS maps inside arrays become JS objects"
+    (let [js-obj (component/clj->js-props {:rows [{:id 1 :name "a"}
+                                                  {:id 2 :name "b"}]})
           rows   (gobj/get js-obj "rows")]
       (is (array? rows))
-      (is (identical? inner (aget rows 0))
-          "inner CLJS map is preserved by reference, not converted to a JS object"))))
+      (is (object? (aget rows 0)))
+      (is (= 1 (gobj/get (aget rows 0) "id")))
+      (is (= "a" (gobj/get (aget rows 0) "name")))
+      (is (= 2 (gobj/get (aget rows 1) "id")))))
+  (testing "nested arrays inside arrays also recurse"
+    (let [js-obj (component/clj->js-props {:grid [[{:v 1}] [{:v 2}]]})
+          grid   (gobj/get js-obj "grid")]
+      (is (array? grid))
+      (is (array? (aget grid 0)))
+      (is (= 1 (gobj/get (aget (aget grid 0) 0) "v")))))
+  (testing "primitive elements pass through unchanged"
+    (let [js-obj (component/clj->js-props {:items [1 "two" :three]})
+          items  (gobj/get js-obj "items")]
+      (is (array? items))
+      (is (= 1 (aget items 0)))
+      (is (= "two" (aget items 1)))))
+  (testing "pre-JS objects inside arrays are kept by reference"
+    (let [raw    #js {:already "js"}
+          js-obj (component/clj->js-props {:rows [raw]})
+          rows   (gobj/get js-obj "rows")]
+      (is (identical? raw (aget rows 0))))))
 
 (deftest clj->js-props-hashmap-path-test
   (testing "PersistentHashMap (>8 entries) takes the reduce-kv fallback path"

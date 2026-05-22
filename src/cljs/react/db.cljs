@@ -51,7 +51,20 @@
           (when (not= old-val new-val)
             (f [::cursor k cursor] cursor old-val new-val))))))
   (-remove-watch [cursor k]
-    (remove-watch (.-atom cursor) [::cursor k cursor])))
+    (remove-watch (.-atom cursor) [::cursor k cursor]))
+
+  ;; Two cursors are equal when they read/write the same slot: same underlying
+  ;; atom (by identity) and same path (by `=`). This lets cursors compare equal
+  ;; across renders and across components — `use-db` memoizes per-render, but
+  ;; consumers that pass a cursor down or rebuild one elsewhere still see `=`.
+  IEquiv
+  (-equiv [_ other]
+    (and (instance? Cursor other)
+         (identical? atom (.-atom ^Cursor other))
+         (= path (.-path ^Cursor other))))
+
+  IHash
+  (-hash [_] (hash [(goog/getUid atom) path])))
 
 ;; defonce so hot-reload preserves context identity — otherwise existing
 ;; <Provider> instances and their consumers would orphan on every reload.

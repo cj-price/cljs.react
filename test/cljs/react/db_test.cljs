@@ -182,3 +182,33 @@
       (remove-watch c :k)
       (reset! c 3)
       (is (= 1 @fired) "watch should not have fired after remove-watch"))))
+
+(deftest cursor-equiv-and-hash-test
+  (testing "Cursors over the same atom + path are = and hash-equal"
+    (let [a (atom {:x {:y 1}})
+          c1 (db/->Cursor a [:x :y])
+          c2 (db/->Cursor a [:x :y])]
+      (is (= c1 c2))
+      (is (= (hash c1) (hash c2)))))
+  (testing "Cursors over the same atom but different paths are not ="
+    (let [a (atom {:x 1 :y 2})
+          c1 (db/->Cursor a [:x])
+          c2 (db/->Cursor a [:y])]
+      (is (not= c1 c2))))
+  (testing "Cursors over different atoms with the same path are not ="
+    (let [a1 (atom {:x 1})
+          a2 (atom {:x 1})
+          c1 (db/->Cursor a1 [:x])
+          c2 (db/->Cursor a2 [:x])]
+      (is (not= c1 c2))))
+  (testing "Root cursors over the same atom are ="
+    (let [a (atom {})
+          c1 (db/->Cursor a [])
+          c2 (db/->Cursor a [])]
+      (is (= c1 c2))
+      (is (= (hash c1) (hash c2)))))
+  (testing "Cursor is safe in a set (drives hashed lookup)"
+    (let [a (atom {:x 1})
+          c1 (db/->Cursor a [:x])
+          c2 (db/->Cursor a [:x])]
+      (is (contains? #{c1} c2)))))

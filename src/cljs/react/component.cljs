@@ -23,20 +23,33 @@
     (fn [type props & children] ...)"
   react/createElement)
 
-(declare props->js)
+(declare props->js convert-value)
+
+(defn- walk-seq
+  "Convert a sequential to a JS array, recursively converting each element via
+  convert-value. Mutates the fresh array `to-array` returns; no extra allocation
+  beyond the element walks themselves."
+  ^js [v]
+  (let [arr (to-array v)
+        n   (alength arr)]
+    (loop [i 0]
+      (when (< i n)
+        (aset arr i (convert-value (aget arr i)))
+        (recur (inc i))))
+    arr))
 
 (defn- convert-value
-  "Convert one prop value. Maps recurse through props->js; vectors and other
-  sequentials become JS arrays via to-array (shallow — array elements are not
-  walked, since React-array contents are typically already JS-friendly).
+  "Convert one prop value. Maps recurse through props->js; sequentials become
+  JS arrays with each element converted via convert-value (so arrays-of-maps
+  arrive as arrays-of-JS-objects, matching consumer expectations).
   Fast-paths PersistentArrayMap / PersistentVector ahead of the generic
   map?/sequential? branches to skip protocol dispatch on the common case."
   [v]
   (cond
     (instance? PersistentArrayMap v) (props->js v)
-    (instance? PersistentVector  v)  (to-array v)
+    (instance? PersistentVector  v)  (walk-seq v)
     (map?         v)                  (props->js v)
-    (sequential?  v)                  (to-array v)
+    (sequential?  v)                  (walk-seq v)
     :else                              v))
 
 (defn- convert-prop
@@ -101,10 +114,9 @@
 
   - Nested maps are walked recursively (so `{:style {:color \"red\"}}` becomes
     `#js {:style #js {:color \"red\"}}`).
-  - Sequentials become JS arrays via `to-array` — conversion is **shallow**:
-    elements inside the array (e.g. CLJS maps inside `:rows`) are kept by
-    reference, not recursively converted. Pass already-JS-friendly values when
-    handing arrays to a JS-only consumer.
+  - Sequentials become JS arrays with each element walked recursively (so
+    `{:rows [{:id 1} {:id 2}]}` becomes `#js {:rows #js [#js {:id 1} #js {:id 2}]}`).
+    Pre-JS values (`#js {}`, dates, etc.) pass through unchanged.
   - `:ref` whose value is a RefAtom is unwrapped to the raw React ref.
   - nil / empty input → nil (React accepts nil props; this saves an
     allocation per call). Nested empty maps round-trip as `#js {}` to avoid
