@@ -99,3 +99,19 @@ kebab-case.
 - Tests live in `test/cljs/react/`
 - Uses `cljs.test` + `@testing-library/react` + `global-jsdom`
 - Run with `bb test`; shadow-cljs compiles the `:test` build then runs with Node
+
+## Benchmarks
+
+Always run `nix-shell --run 'bb bench'` after touching any of:
+
+- `src/cljs/react/component.cljs` (props conversion, element creation, memo)
+- `src/cljs/react/db.cljs` (Cursor, DB context)
+- `src/cljs/react/hook.cljs` (StateAtom, RefAtom, use-selector cache)
+- anything else in the React-render hot path
+
+The saved baseline at `benchmark/baselines.edn` is environmentally fragile —
+absolute numbers drift between machines and across system load. To check for
+real regression, bench `HEAD` vs `HEAD~1` (or whichever ref predates the
+change) on the **same machine in the same run**, and compare medians across
+3+ runs. Only treat a delta as a regression if it exceeds the per-bench CV
+and is reproducible.

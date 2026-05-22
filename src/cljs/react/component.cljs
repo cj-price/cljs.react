@@ -26,15 +26,25 @@
 (declare props->js convert-value)
 
 (defn- walk-seq
-  "Convert a sequential to a JS array, recursively converting each element via
-  convert-value. Mutates the fresh array `to-array` returns; no extra allocation
-  beyond the element walks themselves."
+  "Convert a sequential to a JS array, recursively converting CLJS map /
+  sequential elements via convert-value. Strings, numbers, booleans, nil,
+  keywords — and anything non-`object?` — short-circuit before the
+  protocol-based checks, keeping vectors-of-primitives at `to-array` cost.
+  Persistent collections take the fast `instance?` branch; the slower
+  `map?` / `sequential?` fallback only fires for non-Persistent CLJS
+  collections (Cons, LazySeq, Range, etc.)."
   ^js [v]
   (let [arr (to-array v)
         n   (alength arr)]
     (loop [i 0]
       (when (< i n)
-        (aset arr i (convert-value (aget arr i)))
+        (let [e (aget arr i)]
+          (when (or (instance? PersistentArrayMap e)
+                    (instance? PersistentVector  e)
+                    (instance? PersistentHashMap e)
+                    (and (object? e)
+                         (or (map? e) (sequential? e))))
+            (aset arr i (convert-value e))))
         (recur (inc i))))
     arr))
 
