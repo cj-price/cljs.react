@@ -24,7 +24,10 @@
     :else           v))
 
 (def ^:private scalar-gen
-  (gen/one-of [gen/small-integer gen/string-alphanumeric gen/boolean]))
+  (gen/one-of [gen/small-integer
+               gen/string-alphanumeric
+               gen/boolean
+               (gen/return nil)]))
 
 (def ^:private prop-value-gen
   (gen/recursive-gen

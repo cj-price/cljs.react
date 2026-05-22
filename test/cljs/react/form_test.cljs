@@ -355,6 +355,26 @@
                        (is (identical? err (:submit-error s)))
                        (done)))))))))
 
+(deftest submit-fn-sync-throw-test
+  (testing "submit-fn that throws synchronously surfaces into :submit-error
+            and clears :submitting? — the throw must not leak past run-submit!"
+    (async done
+      (let [err    (js/Error. "submit blew up sync")
+            result (renderHook
+                     #(form/use-form
+                        {:values    {:x 1}
+                         :on-submit (fn [_] (throw err))}))
+            handle  (.. result -result -current)
+            submit! (form/on-submit handle)
+            fake-e  #js {:preventDefault (fn [])}]
+        (-> (submit! fake-e)
+            (.then (fn []
+                     (let [s (form-state handle)]
+                       (is (false? (:submitting? s)))
+                       (is (false? (:submitted? s)))
+                       (is (identical? err (:submit-error s)))
+                       (done)))))))))
+
 (deftest submit-concurrent-guard-test
   (testing "second submit during in-flight first submit is a no-op"
     (async done
@@ -394,6 +414,31 @@
             submit! (form/on-submit handle)
             fake-e  #js {:preventDefault (fn [])}]
         (-> (submit! fake-e)
+            (.then (fn []
+                     (let [s (form-state handle)]
+                       (is (false? (:submitting? s)))
+                       (is (false? (:validating? s)))
+                       (is (identical? err (:submit-error s)))
+                       (done)))))))))
+
+(deftest submit-validator-sync-throw-test
+  (testing "validator that throws synchronously is converted to a rejected
+            submit promise — form-atom does not get stuck with :submitting? true"
+    (async done
+      (let [err    (js/Error. "sync validator blew up")
+            result (renderHook
+                     #(form/use-form
+                        {:values    {:x 1}
+                         :validate  (fn [_] (throw err))
+                         :on-submit (fn [_] nil)}))
+            handle  (.. result -result -current)
+            submit! (form/on-submit handle)
+            fake-e  #js {:preventDefault (fn [])}
+            ;; submit! must not throw synchronously — it must return a promise
+            ;; that resolves once the form-atom is back to a sane state.
+            submit-promise (submit! fake-e)]
+        (is (instance? js/Promise submit-promise))
+        (-> submit-promise
             (.then (fn []
                      (let [s (form-state handle)]
                        (is (false? (:submitting? s)))
@@ -460,6 +505,33 @@
                      (.unmount result)
                      (done))))))))
 
+(deftest blur-validator-sync-throw-test
+  (testing "blur validator that throws synchronously does not leak the throw
+            into React's event handler; :validating? remains false"
+    (async done
+      (let [handle-atom (cljs.core/atom nil)
+            result (renderHook
+                     #(let [f (form/use-form
+                                {:values      {:name ""}
+                                 :validate    (fn [_]
+                                                (throw (js/Error. "blur boom")))
+                                 :validate-on :blur})]
+                        (reset! handle-atom f)
+                        (form/use-field f :name)))
+            field  (.. result -result -current)
+            outcome (cljs.core/atom nil)]
+        (-> (js/Promise.resolve
+              (act #(reset! outcome
+                            (try ((:onBlur field) nil) ::ok
+                                 (catch :default _ ::threw)))))
+            (.then flush-microtasks)
+            (.then (fn []
+                     (is (= ::ok @outcome)
+                         "sync throw from validator must not leak into onBlur")
+                     (is (false? (:validating? (form-state @handle-atom))))
+                     (.unmount result)
+                     (done))))))))
+
 (deftest submit-clears-prior-error-test
   (testing ":submit-error is cleared at the start of a new submit"
     (async done
@@ -482,6 +554,38 @@
             (.then (fn []
                      (is (nil? (:submit-error (form-state handle))))
                      (is (true? (:submitted? (form-state handle))))
+                     (done))))))))
+
+(deftest submit-clears-prior-error-on-validation-failure-test
+  (testing ":submit-error from a previous submit is cleared even when the
+            next submit fails validation (errs path, not on-submit path)"
+    (async done
+      (let [step (cljs.core/atom 0)
+            result (renderHook
+                     #(form/use-form
+                        {:values    {:x 1}
+                         :validate  (fn [_]
+                                      (when (> @step 1) {:x "bad"}))
+                         :on-submit (fn [_]
+                                      (swap! step inc)
+                                      (js/Promise. (fn [_ reject]
+                                                     (reject (js/Error. "boom")))))}))
+            handle (.. result -result -current)
+            submit! (form/on-submit handle)
+            fake-e #js {:preventDefault (fn [])}]
+        (-> (submit! fake-e)
+            (.then (fn []
+                     ;; First submit: on-submit rejects → :submit-error set
+                     (is (some? (:submit-error (form-state handle))))
+                     (swap! step inc) ;; arm validate to return errors
+                     (submit! fake-e)))
+            (.then (fn []
+                     ;; Second submit: validate returns errors → :submit-error
+                     ;; must be cleared at submit start, even though on-submit
+                     ;; never runs this time.
+                     (is (nil? (:submit-error (form-state handle))))
+                     (is (= {:x "bad"} (:errors (form-state handle))))
+                     (is (false? (:submitting? (form-state handle))))
                      (done))))))))
 
 ;;; reset-form!

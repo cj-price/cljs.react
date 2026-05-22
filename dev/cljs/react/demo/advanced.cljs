@@ -1,6 +1,6 @@
 (ns cljs.react.demo.advanced
   (:require [clojure.string :as string]
-            [cljs.react.hook :refer [use-ref use-state]]
+            [cljs.react.core :refer [use-ref use-state]]
             [cljs.react.demo.util :refer [CodeAndOutput Div P H2 H3 H4
                                           Span Strong Button Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))

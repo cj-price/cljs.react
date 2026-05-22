@@ -1,5 +1,5 @@
 (ns cljs.react.demo.state
-  (:require [cljs.react.hook :refer [use-state]]
+  (:require [cljs.react.core :refer [use-state]]
             [cljs.react.demo.util :refer [CodeAndOutput Div P H2 H3 Span
                                           Button Input Section Ul Li]])
   (:require-macros [cljs.react.core :refer [defnc]]))

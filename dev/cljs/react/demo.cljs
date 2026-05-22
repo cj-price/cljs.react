@@ -1,6 +1,6 @@
 (ns cljs.react.demo
-  (:require [cljs.react.dom :as dom]
-            [cljs.react.hook :refer [use-state]]
+  (:require [cljs.react.core :refer [use-state]]
+            [cljs.react.dom :as dom]
             [cljs.react.demo.basics :refer [BasicsTab]]
             [cljs.react.demo.state :refer [StateTab]]
             [cljs.react.demo.effects :refer [EffectsTab]]

@@ -1,6 +1,6 @@
 (ns cljs.react.demo.forms
-  (:require [cljs.react.core :refer [use-ref use-state]]
-            [cljs.react.form :as form]
+  (:require [cljs.react.core :refer [use-ref use-state
+                                     use-form use-field use-form-meta on-submit]]
             [cljs.react.demo.util :refer [CodeAndOutput Div P H2 H3 Span
                                           Label Input Form Button Section]]
             [clojure.string :as str])
@@ -39,7 +39,7 @@
         (Span error)))))
 
 (defnc FormSubmitBtn [{:keys [f label]}]
-  (let [{:keys [submitting? submitted?]} (form/use-form-meta f)]
+  (let [{:keys [submitting? submitted?]} (use-form-meta f)]
     (Button {:type "submit"
              :disabled (or submitting? submitted?)
              :className "w-full px-6 py-2.5 bg-koi-orange text-white rounded-lg font-semibold shadow-md hover:bg-orange-600 active:bg-orange-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all"}
@@ -96,20 +96,20 @@
         (Span error)))))
 
 (defnc ProfileFormDemo []
-  (let [f           (form/use-form
+  (let [f           (use-form
                       {:values   {:username "" :plan nil :newsletter false :terms false}
                        :validate validate-profile
                        :on-submit (fn [values]
                                     (js/Promise.
                                       (fn [resolve _]
                                         (js/setTimeout #(resolve values) 800))))})
-        username-fp (form/use-field f :username)
-        plan-fp     (form/use-field f :plan)
-        newsletter-fp (form/use-field f :newsletter {:checkbox? true})
-        terms-fp    (form/use-field f :terms {:checkbox? true})]
+        username-fp (use-field f :username)
+        plan-fp     (use-field f :plan)
+        newsletter-fp (use-field f :newsletter {:checkbox? true})
+        terms-fp    (use-field f :terms {:checkbox? true})]
     (Div {:className "w-full"}
       (Form {:className "space-y-5"
-             :onSubmit (form/on-submit f)}
+             :onSubmit (on-submit f)}
         (FormFieldInput (assoc username-fp :label "Username" :placeholder "your-username"))
         (FormRadioGroup (assoc plan-fp
                           :label "Plan"
@@ -121,18 +121,18 @@
         (FormSubmitBtn {:f f :label "Create Account"})))))
 
 (defnc FormDemo []
-  (let [f        (form/use-form
+  (let [f        (use-form
                    {:values   {:name "" :email ""}
                     :validate validate-signup
                     :on-submit (fn [values]
                                  (js/Promise.
                                    (fn [resolve _]
                                      (js/setTimeout #(resolve values) 800))))})
-        name-fp  (form/use-field f :name)
-        email-fp (form/use-field f :email)]
+        name-fp  (use-field f :name)
+        email-fp (use-field f :email)]
     (Div {:className "w-full"}
       (Form {:className "space-y-5"
-             :onSubmit (form/on-submit f)}
+             :onSubmit (on-submit f)}
         (FormFieldInput (assoc name-fp :label "Name" :placeholder "Your name"))
         (FormFieldInput (assoc email-fp :label "Email" :type "email" :placeholder "you@example.com"))
         (FormSubmitBtn {:f f :label "Sign Up"})))))
@@ -140,7 +140,7 @@
 ;;;; Async Validation Demo
 
 (defnc FormValidatingIndicator [{:keys [f]}]
-  (let [{:keys [validating?]} (form/use-form-meta f)]
+  (let [{:keys [validating?]} (use-form-meta f)]
     (when validating?
       (Span {:className "text-xs text-gray-500 italic animate-pulse"}
         "Checking…"))))
@@ -154,14 +154,14 @@
         700))))
 
 (defnc AsyncValidationDemo []
-  (let [f           (form/use-form
+  (let [f           (use-form
                       {:values      {:username ""}
                        :validate-on :blur
                        :validate    validate-username-async})
-        username-fp (form/use-field f :username)]
+        username-fp (use-field f :username)]
     (Div {:className "w-full"}
       (Form {:className "space-y-5"
-             :onSubmit (form/on-submit f)}
+             :onSubmit (on-submit f)}
         (Div {:className "space-y-1.5"}
           (Div {:className "flex items-center gap-2"}
             (Label {:className "text-sm font-semibold text-gray-700"}
@@ -190,10 +190,10 @@
                        (reset! atom-ref (atom {:first-name "" :last-name "" :email ""})))
         profile-atom @atom-ref
         active       (use-state "none")
-        f            (form/use-form {:values profile-atom})
-        first-fp     (form/use-field f :first-name)
-        last-fp      (form/use-field f :last-name)
-        email-fp     (form/use-field f :email)]
+        f            (use-form {:values profile-atom})
+        first-fp     (use-field f :first-name)
+        last-fp      (use-field f :last-name)
+        email-fp     (use-field f :email)]
     (Div {:className "w-full space-y-4"}
       (Div {:className "flex gap-2"}
         (Button {:type "button"
@@ -222,7 +222,7 @@
 ;;;; Subscription Isolation Demo
 
 (defnc FieldWithCount [{:keys [f field-key label]}]
-  (let [fp      (form/use-field f field-key)
+  (let [fp      (use-field f field-key)
         counter (use-ref 0)
         _       (reset! counter (inc @counter))]
     (Div {:className "space-y-1"}
@@ -237,7 +237,7 @@
               :onBlur (:onBlur fp)}))))
 
 (defnc SubscriptionIsolationDemo []
-  (let [f (form/use-form {:values {:first-name "" :last-name ""}})]
+  (let [f (use-form {:values {:first-name "" :last-name ""}})]
     (Div {:className "w-full space-y-4"}
       (P {:className "text-sm text-gray-500"}
         "Type in one field — only that field's render counter increments.")
@@ -253,27 +253,27 @@
 
     (CodeAndOutput
      {:title "Form with per-field subscriptions"
-      :code "(defnc SignupForm []\n  (let [f        (form/use-form\n                   {:values   {:name \"\" :email \"\"}\n                    :validate validate\n                    :on-submit api/create-user!})\n        name-fp  (form/use-field f :name)\n        email-fp (form/use-field f :email)]\n    (Form {:onSubmit (form/on-submit f)}\n      (FieldInput (assoc name-fp :label \"Name\"))\n      (FieldInput (assoc email-fp :label \"Email\"))\n      (Button {:type \"submit\"} \"Submit\"))))"}
+      :code "(defnc SignupForm []\n  (let [f        (use-form\n                   {:values   {:name \"\" :email \"\"}\n                    :validate validate\n                    :on-submit api/create-user!})\n        name-fp  (use-field f :name)\n        email-fp (use-field f :email)]\n    (Form {:onSubmit (on-submit f)}\n      (FieldInput (assoc name-fp :label \"Name\"))\n      (FieldInput (assoc email-fp :label \"Email\"))\n      (Button {:type \"submit\"} \"Submit\"))))"}
      (FormDemo))
 
     (CodeAndOutput
      {:title "Checkboxes & Radio Buttons"
-      :code ";; Radio — use-field, reads e.target.value\n(let [plan-fp (form/use-field f :plan)]\n  (FormRadioGroup\n    (assoc plan-fp :label \"Plan\"\n      :options [{:value \"free\"  :label \"Free\"}\n                {:value \"pro\"   :label \"Pro\"}\n                {:value \"ent\"   :label \"Enterprise\"}])))\n\n;; Checkbox — use-field with {:checkbox? true}\n(let [terms-fp (form/use-field f :terms {:checkbox? true})]\n  (FormCheckboxInput\n    (assoc terms-fp :label \"Accept terms\")))"}
+      :code ";; Radio — use-field, reads e.target.value\n(let [plan-fp (use-field f :plan)]\n  (FormRadioGroup\n    (assoc plan-fp :label \"Plan\"\n      :options [{:value \"free\"  :label \"Free\"}\n                {:value \"pro\"   :label \"Pro\"}\n                {:value \"ent\"   :label \"Enterprise\"}])))\n\n;; Checkbox — use-field with {:checkbox? true}\n(let [terms-fp (use-field f :terms {:checkbox? true})]\n  (FormCheckboxInput\n    (assoc terms-fp :label \"Accept terms\")))"}
      (ProfileFormDemo))
 
     (H3 "Advanced API")
 
     (CodeAndOutput
      {:title "Async validation & blur mode"
-      :code ";; validate-on :blur triggers validation when a field loses focus.\n;; Return a Promise from :validate to signal async work.\n;; validating? in use-form-meta flips true until the Promise resolves.\n\n(form/use-form\n  {:values      {:username \"\"}\n   :validate-on :blur\n   :validate    (fn [{:keys [username]}]\n                  (js/Promise.\n                    (fn [resolve _]\n                      (js/setTimeout\n                        #(resolve (when (= username \"taken\")\n                                    {:username \"Already taken\"}))\n                        700))))})\n\n;; Sub-component subscribes independently to validating? state\n(defnc ValidatingIndicator [{:keys [f]}]\n  (let [{:keys [validating?]} (form/use-form-meta f)]\n    (when validating?\n      (Span \"Checking…\"))))"}
+      :code ";; validate-on :blur triggers validation when a field loses focus.\n;; Return a Promise from :validate to signal async work.\n;; validating? in use-form-meta flips true until the Promise resolves.\n\n(use-form\n  {:values      {:username \"\"}\n   :validate-on :blur\n   :validate    (fn [{:keys [username]}]\n                  (js/Promise.\n                    (fn [resolve _]\n                      (js/setTimeout\n                        #(resolve (when (= username \"taken\")\n                                    {:username \"Already taken\"}))\n                        700))))})\n\n;; Sub-component subscribes independently to validating? state\n(defnc ValidatingIndicator [{:keys [f]}]\n  (let [{:keys [validating?]} (use-form-meta f)]\n    (when validating?\n      (Span \"Checking…\"))))"}
      (AsyncValidationDemo))
 
     (CodeAndOutput
      {:title "Reactive defaults via watchable atom"
-      :code ";; Pass a watchable atom as :values.\n;; Un-dirtied fields stay in sync with the atom.\n;; Fields the user has typed in are frozen — not overwritten on load.\n\n(let [atom-ref     (use-ref nil)\n      _            (when (nil? @atom-ref)\n                     (reset! atom-ref (atom {:first-name \"\" :email \"\"})))\n      profile-atom @atom-ref\n      f            (form/use-form {:values profile-atom})]\n  ;; Reset the atom → only untouched fields update\n  (Button {:onClick #(reset! profile-atom\n                       {:first-name \"Alice\"\n                        :email \"alice@example.com\"})}\n    \"Load Alice\"))"}
+      :code ";; Pass a watchable atom as :values.\n;; Un-dirtied fields stay in sync with the atom.\n;; Fields the user has typed in are frozen — not overwritten on load.\n\n(let [atom-ref     (use-ref nil)\n      _            (when (nil? @atom-ref)\n                     (reset! atom-ref (atom {:first-name \"\" :email \"\"})))\n      profile-atom @atom-ref\n      f            (use-form {:values profile-atom})]\n  ;; Reset the atom → only untouched fields update\n  (Button {:onClick #(reset! profile-atom\n                       {:first-name \"Alice\"\n                        :email \"alice@example.com\"})}\n    \"Load Alice\"))"}
      (ReactiveDefaultsDemo))
 
     (CodeAndOutput
      {:title "Per-field subscription isolation"
-      :code ";; use-field creates an independent per-field subscription via\n;; use-sync-external-store. Typing in one field ONLY re-renders\n;; the component subscribed to that field.\n\n(defnc FieldWithCount [{:keys [f field-key label]}]\n  (let [fp      (form/use-field f field-key)\n        counter (use-ref 0)\n        _       (reset! counter (inc @counter))]\n    (Div\n      (Span (str \"renders: \" @counter))\n      (Input {:value    (or (:value fp) \"\")\n              :onChange (:onChange fp)\n              :onBlur   (:onBlur fp)}))))\n\n;; Typing in :first-name only re-renders that component\n(FieldWithCount {:f f :field-key :first-name :label \"First Name\"})\n(FieldWithCount {:f f :field-key :last-name  :label \"Last Name\"})"}
+      :code ";; use-field creates an independent per-field subscription via\n;; use-sync-external-store. Typing in one field ONLY re-renders\n;; the component subscribed to that field.\n\n(defnc FieldWithCount [{:keys [f field-key label]}]\n  (let [fp      (use-field f field-key)\n        counter (use-ref 0)\n        _       (reset! counter (inc @counter))]\n    (Div\n      (Span (str \"renders: \" @counter))\n      (Input {:value    (or (:value fp) \"\")\n              :onChange (:onChange fp)\n              :onBlur   (:onBlur fp)}))))\n\n;; Typing in :first-name only re-renders that component\n(FieldWithCount {:f f :field-key :first-name :label \"First Name\"})\n(FieldWithCount {:f f :field-key :last-name  :label \"Last Name\"})"}
      (SubscriptionIsolationDemo))))

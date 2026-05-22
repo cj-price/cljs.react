@@ -20,17 +20,29 @@
    [cljs.react.error-boundary :as error-boundary]))
 
 (defn Element
-  "Create a React element from ClojureScript data structures.
+  "Create a React element from a ClojureScript props map and child elements.
 
   Usage:
     (Element {:tag \"div\" :className \"container\"} child1 child2 ...)
 
-  The first argument should be a map with at least a :tag key.
-  All other keys become props passed to React.createElement.
-  Remaining arguments are children.
+  The first argument must be a map with a :tag key (a string for DOM elements
+  or a JS React component such as a MUI export). All other keys become props on
+  the React element; remaining positional args are children.
 
-  Uses component/*create-element* dynamic var which defaults to react/createElement
-  but can be rebound to use alternative renderers like emotion/jsx."
+  Do NOT use `Element` to call `defnc` components — call them directly:
+    (MyComponent {:key \"k\" :foo 1})        ; correct
+    (Element {:tag MyComponent :foo 1})    ; wrong — drops :key and cljsProps wrapper
+  Calling a defnc through `Element` hands the component raw JS props instead of
+  a CLJS map; the component body will see nothing usable.
+
+  A nil :tag throws ex-info with :type :cljs.react.component/missing-tag.
+
+  `Element` honors `component/*create-element*`, which defaults to
+  `react/createElement` but can be rebound to use alternative renderers
+  (for example a custom JSX runtime). The escape-hatch helpers
+  `make-element-fn` / `make-create-cljs-element-fn` build standalone
+  Element-shaped fns bound to a specific renderer; they do not read this
+  dynamic var."
   ([{:keys [tag] :as props}]
    (component/*create-element* tag (component/element-props tag props)))
   ([{:keys [tag] :as props} c1]
@@ -59,9 +71,19 @@
   use-layout-effect hook/use-layout-effect)
 (def ^{:doc "React.useRef wrapped as a RefAtom (deref / reset! / swap!). 0-arity initializes to nil."}
   use-ref hook/use-ref)
-(def ^{:doc "Customize the handle exposed to parent components when using forward-ref."}
+(def ^{:doc "Customize the handle exposed to parent components when using forward-ref.
+
+  Usage inside a forward-ref'd component:
+    (use-imperative-handle ref
+      (fn [] #js {:focus (fn [] (.focus @input-ref))})
+      [])
+
+  Args: a RefAtom (the forwarded ref), a 0-arity fn returning the handle
+  object, and an optional deps vector. Deps follow the standard hook rules
+  (CLJS structural equality)."}
   use-imperative-handle hook/use-imperative-handle)
-(def ^{:doc "React.useContext. Reads the current value of a React context."}
+(def ^{:doc "React.useContext. Reads the current value of a React context.
+  The argument is the context object returned by `create-context`."}
   use-context hook/use-context)
 (def ^{:doc "React.useId. Generates a unique, stable id suitable for accessibility attributes."}
   use-id hook/use-id)
@@ -73,7 +95,15 @@
   use-sync-external-store hook/use-sync-external-store)
 (def ^{:doc "Subscribe to an IWatchable source with a custom diff?/select pair. See cljs.react.hook/use-selector for details."}
   use-selector hook/use-selector)
-(def ^{:doc "Returns [is-pending start-transition] for marking updates as non-urgent. Wrap state updates in start-transition to keep the UI responsive."}
+(def ^{:doc "Returns [is-pending? start-transition] for marking updates as non-urgent.
+
+  Usage:
+    (let [[pending? start-transition] (use-transition)]
+      (Element {:tag \"button\"
+                :onClick #(start-transition (fn [] (reset! state :slow)))}
+        (if pending? \"…\" \"Go\")))
+
+  Wrap expensive state updates in start-transition to keep the UI responsive."}
   use-transition hook/use-transition)
 (def ^{:doc "React.useDeferredValue. Returns a deferred version of the supplied value that lags slightly behind during expensive updates."}
   use-deferred-value hook/use-deferred-value)
@@ -103,9 +133,36 @@
   use-db-atom db/use-db-atom)
 
 ;; Re-export form utilities
-(def ^{:doc "Create a form handle. opts: {:values :validate :on-submit :validate-on}. See cljs.react.form/use-form for details."}
+(def ^{:doc "Create a form handle. Returns a FormHandle — pass it to use-field /
+  use-form-meta / on-submit to drive a form.
+
+  opts map:
+    :values      - initial values map, or a watchable (atom/cursor) for reactive defaults
+    :validate    - fn(values) -> errors-map or Promise<errors-map>
+    :on-submit   - fn(values) -> nil or Promise
+    :validate-on - nil | :submit | :blur. :submit (the default) validates only
+                   on submit; :blur additionally re-validates when a field blurs.
+
+  When :values is a plain map, it is captured ONCE on first render — later
+  re-renders with a new map literal do not reset the form. Pass an atom/cursor
+  if you want un-dirtied fields to follow external changes.
+
+  Throws ex-info :type :cljs.react.form/invalid-validate-on if :validate-on
+  is anything other than nil, :submit, or :blur."}
   use-form form/use-form)
-(def ^{:doc "Subscribe to a single field. Returns {:value :error :dirty :onChange :onBlur} — or {:checked ...} in place of :value when opts {:checkbox? true} is passed. Only re-renders when this field's slice changes."}
+(def ^{:doc "Subscribe to a single field. Re-renders only when this field's
+  value, error, dirty, or touched state changes.
+
+  Returns a map with keys:
+    :value    — current value (omitted when opts :checkbox? is true)
+    :checked  — boolean (only when opts :checkbox? is true)
+    :error    — error string, or nil while the field is untouched
+    :dirty    — boolean: has the user changed this field since reset?
+    :onChange — DOM change handler (extracts e.target.value / .checked)
+    :onBlur   — DOM blur handler (marks the field touched)
+
+  opts map (optional): :checkbox? — reads e.target.checked and returns :checked
+  instead of :value."}
   use-field form/use-field)
 (def ^{:doc "Subscribe to form meta state. Returns {:validating? :submitting? :submitted? :errors :submit-error}."}
   use-form-meta form/use-form-meta)
@@ -124,7 +181,20 @@
 
 ;; Form escape hatches — for testing, devtools, or custom integrations.
 ;; Most app code should stick to use-form / use-field / use-form-meta.
-(def ^{:doc "Return the raw form-state atom for direct inspection/mutation. Advanced: prefer use-form-meta or use-field for reactive reads. Dereference for a snapshot."}
+(def ^{:doc "Return the raw form-state atom for direct inspection/mutation.
+
+  Dereferencing yields a map with the following keys (this shape is part of
+  the public contract):
+    :values        — current values map
+    :errors        — map of field-key → error
+    :dirty         — set of field-keys the user has changed
+    :touched       — set of field-keys that have been blurred or submitted
+    :validating?   — true while an async validator is in flight
+    :submitting?   — true while a submit is in flight
+    :submitted?    — true after a submit completes successfully
+    :submit-error  — error from the most recent failed submit, or nil
+
+  Advanced — prefer use-form-meta / use-field for reactive reads."}
   form-atom form/form-atom)
 (def ^{:doc "Return the current :use-form opts map (always fresh)."}
   form-opts form/form-opts)

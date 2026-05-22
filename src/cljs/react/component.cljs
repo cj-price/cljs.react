@@ -12,9 +12,12 @@
             [cljs.react.hook :as hook]))
 
 (def ^:dynamic *create-element*
-  "Dynamic var holding the current element creation function.
-  Defaults to react/createElement but can be rebound to use alternative
-  renderers like emotion/jsx.
+  "Dynamic var holding the current element creation function. Read by `Element`
+  and `create-cljs-element`; `make-element-fn` / `make-create-cljs-element-fn`
+  bind their renderer at construction time and ignore this var.
+
+  Defaults to react/createElement; rebind to use an alternative renderer
+  (for example emotion/jsx).
 
   The function should have the signature:
     (fn [type props & children] ...)"
@@ -122,10 +125,9 @@
   [type props]
   (if (string? type)
     (clj->js-props props)
-    (let [js-obj #js {:cljsProps props}]
-      (when-let [k (:key props)]
-        (aset js-obj "key" k))
-      js-obj)))
+    (if-let [k (:key props)]
+      #js {:cljsProps props :key k}
+      #js {:cljsProps props})))
 
 (defn create-cljs-element
   "Create a React element that works with ClojureScript data structures.

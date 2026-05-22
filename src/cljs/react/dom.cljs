@@ -19,14 +19,18 @@
   (react-dom-client/hydrateRoot container element))
 
 (defn render
-  "Render `element` into an existing root created by [[create-root]]."
+  "Render `element` into an existing root created by [[create-root]].
+  Returns nil — react-dom returns undefined here, do not chain on the result."
   [root element]
-  (.render ^js root element))
+  (.render ^js root element)
+  nil)
 
 (defn unmount
-  "Detach and clean up a root created by [[create-root]] or [[hydrate-root]]."
+  "Detach and clean up a root created by [[create-root]] or [[hydrate-root]].
+  Returns nil."
   [root]
-  (.unmount ^js root))
+  (.unmount ^js root)
+  nil)
 
 (defn create-portal
   "Render `child` into `container` (a DOM node outside the current tree)."

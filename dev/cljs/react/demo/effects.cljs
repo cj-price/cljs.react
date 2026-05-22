@@ -1,6 +1,6 @@
 (ns cljs.react.demo.effects
   (:require ["react" :as react]
-            [cljs.react.hook :refer [use-ref use-effect use-memo use-callback use-state]]
+            [cljs.react.core :refer [use-ref use-effect use-memo use-callback use-state]]
             [cljs.react.demo.util :refer [CodeAndOutput Div P H2 H3 H4
                                           Button Input Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))

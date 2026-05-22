@@ -41,7 +41,17 @@
           cursor (.. result -result -current)]
       (act #(swap! cursor update :n inc))
       (let [new-cursor (.. result -result -current)]
-        (is (= {:n 2} @new-cursor))))))
+        (is (= {:n 2} @new-cursor)))))
+
+  (testing "use-db [] is equivalent to the 0-arity root cursor"
+    ;; The empty-vector path takes the `pathed?` false branch in use-db,
+    ;; matching the 0-arity root.
+    (let [result (renderHook #(db/use-db [])
+                             #js {:wrapper (db-wrapper {:k "v"})})
+          cursor (.. result -result -current)]
+      (is (= {:k "v"} @cursor))
+      (act #(reset! cursor {:k2 "v2"}))
+      (is (= {:k2 "v2"} @(.. result -result -current))))))
 
 (deftest use-db-path-test
   (testing "use-db returns cursor scoped to path"

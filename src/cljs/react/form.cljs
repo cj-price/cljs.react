@@ -70,6 +70,15 @@
   [^FormHandle h field-key]
   (swap! (.-form-atom h) update :touched conj field-key))
 
+(defn- call-validator
+  "Run validate(values), funneling any sync throw into a rejected promise so
+  both blur and submit paths can rely on a single .catch. Returns nil when
+  validate is nil — no try frame opened on the no-validator path."
+  [validate v]
+  (when validate
+    (try (validate v)
+         (catch :default e (js/Promise.reject e)))))
+
 (defn- field-snap [state field-key]
   {:value (get (:values state) field-key)
    :error (when (contains? (:touched state) field-key)
@@ -77,12 +86,18 @@
    :dirty (contains? (:dirty state) field-key)})
 
 (defn- touched-error-changed? [old-s new-s field-key]
-  (let [t-old (contains? (:touched old-s) field-key)
-        t-new (contains? (:touched new-s) field-key)]
-    (or (not= t-old t-new)
+  (let [old-touched (:touched old-s)
+        new-touched (:touched new-s)
+        same-touched? (identical? old-touched new-touched)
+        t-old (contains? old-touched field-key)
+        t-new (contains? new-touched field-key)]
+    (or (and (not same-touched?) (not= t-old t-new))
         (and t-new
-             (not= (get (:errors old-s) field-key)
-                   (get (:errors new-s) field-key))))))
+             (let [old-errors (:errors old-s)
+                   new-errors (:errors new-s)]
+               (and (not (identical? old-errors new-errors))
+                    (not= (get old-errors field-key)
+                          (get new-errors field-key))))))))
 
 (defn- field-diff? [old-s new-s field-key]
   ;; Fast path: same state identity → nothing changed for this field either.
@@ -92,10 +107,15 @@
              new-values (:values new-s)
              old-dirty  (:dirty old-s)
              new-dirty  (:dirty new-s)]
-         (or (not= (get old-values field-key)
-                   (get new-values field-key))
-             (not= (contains? old-dirty field-key)
-                   (contains? new-dirty field-key))
+         ;; Per-submap identity short-circuits the cheap-but-not-free `get` /
+         ;; `contains?` work — a swap! that only touches :submitting? leaves
+         ;; :values / :dirty / :errors / :touched referentially identical.
+         (or (and (not (identical? old-values new-values))
+                  (not= (get old-values field-key)
+                        (get new-values field-key)))
+             (and (not (identical? old-dirty new-dirty))
+                  (not= (contains? old-dirty field-key)
+                        (contains? new-dirty field-key)))
              (touched-error-changed? old-s new-s field-key)))))
 
 (defn- build-handlers [^FormHandle handle field-key checkbox?]
@@ -115,26 +135,23 @@
         on-blur   (fn [_e]
                     (swap! form-atom update :touched conj field-key)
                     (when (= :blur (:validate-on @opts-ref))
-                      (let [validate (:validate @opts-ref)
-                            v        (:values @form-atom)]
-                        (when validate
-                          (let [result (validate v)]
-                            (when (instance? js/Promise result)
-                              (swap! form-atom assoc :validating? true))
-                            (-> (js/Promise.resolve result)
-                                (.then (fn [errs]
-                                         (swap! form-atom
-                                                (fn [s]
-                                                  (-> s
-                                                      (assoc :validating? false)
-                                                      (assoc-in [:errors field-key]
-                                                                (get errs field-key)))))))
-                                (.catch (fn [_err]
-                                          ;; Blur validation is fire-and-forget;
-                                          ;; a rejected validator just clears the
-                                          ;; in-flight flag without leaking an
-                                          ;; unhandled rejection to the runtime.
-                                          (swap! form-atom assoc :validating? false)))))))))]
+                      (when-let [validate (:validate @opts-ref)]
+                        (let [result (call-validator validate (:values @form-atom))]
+                          (when (instance? js/Promise result)
+                            (swap! form-atom assoc :validating? true))
+                          (-> (js/Promise.resolve result)
+                              (.then (fn [errs]
+                                       (swap! form-atom
+                                              (fn [s]
+                                                (-> s
+                                                    (assoc :validating? false)
+                                                    (assoc-in [:errors field-key]
+                                                              (get errs field-key)))))))
+                              ;; Rejected validator (sync or async) just clears
+                              ;; :validating? — blur is not the place to surface
+                              ;; validator bugs; submit will.
+                              (.catch (fn [_err]
+                                        (swap! form-atom assoc :validating? false))))))))]
     #js {:onChange on-change :onBlur on-blur}))
 
 (defn- ensure-handlers!
@@ -152,7 +169,9 @@
 ;;;; Hooks
 
 (defn use-form
-  "Create a form handle.
+  "Create a form handle owning the form-state atom. Pass the handle to
+  `use-field` / `use-form-meta` to subscribe to slices, and to `on-submit`
+  to build the DOM submit handler.
 
   opts map:
     :values      - initial values map, or a watchable (atom/cursor) for reactive defaults
@@ -167,9 +186,12 @@
   do NOT reset the form. Pass an atom/cursor if you need reactive defaults;
   un-dirtied fields will then follow changes to the watchable.
 
-  When :on-submit rejects, the error is stored at :submit-error (observable
-  via use-form-meta) and :submitting? returns to false. The error is cleared
-  at the start of the next submit."
+  Validator and submit failures (both sync throws and async rejections) are
+  funneled into :submit-error and reset :submitting? / :validating? to false.
+  :submit-error is cleared at the start of each new submit.
+
+  Throws ex-info :type :cljs.react.form/invalid-validate-on if :validate-on
+  is anything other than nil, :submit, or :blur."
   [opts]
   (let [validate-on (:validate-on opts)]
     ;; Validate opts BEFORE any hook call — throwing after a hook would corrupt
@@ -264,19 +286,14 @@
   ([^FormHandle handle field-key opts]
    (use-field* handle field-key {:checkbox? (boolean (:checkbox? opts))})))
 
-(defn- meta-diff? [old new]
-  (or (not= (:errors old) (:errors new))
-      (not= (:validating? old) (:validating? new))
-      (not= (:submitting? old) (:submitting? new))
-      (not= (:submitted? old) (:submitted? new))
-      (not= (:submit-error old) (:submit-error new))))
+;; Single source of truth for the meta-state shape — adding a key here
+;; updates both the diff predicate and the projected snapshot.
+(def ^:private meta-keys [:validating? :submitting? :submitted? :errors :submit-error])
 
-(defn- meta-select [s]
-  {:validating?  (:validating? s)
-   :submitting?  (:submitting? s)
-   :submitted?   (:submitted? s)
-   :errors       (:errors s)
-   :submit-error (:submit-error s)})
+(defn- meta-diff? [old new]
+  (boolean (some #(not= (% old) (% new)) meta-keys)))
+
+(defn- meta-select [s] (select-keys s meta-keys))
 
 (defn use-form-meta
   "Subscribe to form meta state (everything except :values).
@@ -306,7 +323,7 @@
       (js/Promise.resolve nil)
       (let [v        (:values new-s)
             validate (:validate @(.-opts-ref handle))
-            vresult  (when validate (validate v))
+            vresult  (call-validator validate v)
             _        (when (instance? js/Promise vresult)
                        (swap! form-atom assoc :validating? true))]
         (-> (js/Promise.resolve vresult)

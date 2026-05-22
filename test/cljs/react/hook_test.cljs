@@ -362,7 +362,55 @@
               #js {:cljsProps {} :ref parent-ref}))]
       (render (react/createElement parent-component))
       (is (= "focused" (.focus (.-current parent-ref))))
-      (is (= 42 (.getValue (.-current parent-ref)))))))
+      (is (= 42 (.getValue (.-current parent-ref))))))
+
+  (testing "use-imperative-handle 3-arity: deps gate handle recreation"
+    (let [parent-ref (react/createRef)
+          builds (cljs.core/atom 0)
+          child-component
+          (component/forward-ref
+            (fn [{:keys [ref dep]}]
+              (hook/use-imperative-handle ref
+                (fn []
+                  (swap! builds inc)
+                  #js {:value dep})
+                [dep])
+              (react/createElement "div" nil "child")))
+          mount (fn [dep]
+                  (render (react/createElement child-component
+                            #js {:cljsProps {:dep dep} :ref parent-ref})))
+          r (mount 1)]
+      (is (= 1 @builds))
+      (is (= 1 (.-value (.-current parent-ref))))
+      ;; Same dep — no rebuild.
+      (act #(.rerender r (react/createElement child-component
+                           #js {:cljsProps {:dep 1} :ref parent-ref})))
+      (is (= 1 @builds) "handle is reused when deps are =")
+      ;; Different dep — rebuild.
+      (act #(.rerender r (react/createElement child-component
+                           #js {:cljsProps {:dep 2} :ref parent-ref})))
+      (is (= 2 @builds) "handle rebuilt when deps change")
+      (is (= 2 (.-value (.-current parent-ref))))
+      (.unmount r))))
+
+(deftest use-sync-external-store-direct-test
+  (testing "subscribes and re-renders when the store emits a new snapshot"
+    (let [value      (cljs.core/atom 0)
+          listeners  (cljs.core/atom #{})
+          subscribe  (fn [cb]
+                       (swap! listeners conj cb)
+                       (fn [] (swap! listeners disj cb)))
+          snapshot   (fn [] @value)
+          notify!    (fn [v]
+                       (reset! value v)
+                       (doseq [cb @listeners] (cb)))
+          r          (renderHook #(hook/use-sync-external-store subscribe snapshot))]
+      (is (= 0 (.. r -result -current)))
+      (is (= 1 (count @listeners)) "store received a subscription")
+      (act #(notify! 7))
+      (is (= 7 (.. r -result -current)))
+      (.unmount r)
+      (is (zero? (count @listeners)) "subscription cleaned up on unmount"))))
 
 (deftest use-atom-test
   (testing "returns current atom value on mount"

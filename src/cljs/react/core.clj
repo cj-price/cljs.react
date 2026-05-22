@@ -1,12 +1,10 @@
 (ns cljs.react.core)
 
 (defmacro defnc
-  "Define a React function component with memoization.
+  "Define a memoized React function component.
 
-  The component:
-  - Receives ClojureScript props map
-  - Returns React element (created with Element)
-  - Is wrapped with React.memo using CLJS = for comparison
+  The component receives a ClojureScript props map, returns a React element,
+  and is wrapped with React.memo using CLJS `=` for prop comparison.
 
   Usage:
     (defnc MyComponent
@@ -15,22 +13,20 @@
         (Element {:tag \"h1\"} \"Hello, \" name)
         (Element {:tag \"p\"} \"Age: \" age)))
 
-  With :as-element option for JS interop:
-    (defnc MyComponent
-      :as-element
-      [{:keys [name age]}]
-      (Element {:tag \"div\"}
-        (Element {:tag \"h1\"} \"Hello, \" name)))
-
-  Component can be called with or without props:
+  Call with or without props:
     (MyComponent {:name \"Alice\"})  ; with props
     (MyComponent)                    ; defaults to {}
 
-  Args:
-    name: Component name
-    options: Optional :as-element flag
-    args: Argument vector (receives CLJS map)
-    body: Component body (should return React element)"
+  Options (positional keyword before the arg vector):
+
+    :as-element   Memoized via React.memo with raw JS props instead of the
+                  cljsProps wrapper. Use when the component is called from a
+                  JS-side React tree that expects a plain JS props object.
+
+    :forward-ref  Wrap with React.forwardRef. The forwarded ref arrives in the
+                  CLJS props map under :ref as a RefAtom — deref for the raw
+                  React ref via `react-ref`. Callers can supply :ref directly
+                  in the CLJS props map or via React's second-arg ref slot."
   [name & args]
   (let [[options args] (if (keyword? (first args))
                          [(first args) (rest args)]

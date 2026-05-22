@@ -116,11 +116,9 @@
   ([ref create-handle deps]
    (react/useImperativeHandle (-react-ref ref) create-handle (cljs-deps deps))))
 
-(def ^{:doc "React.useContext — read the current value of a React context."}
-  use-context react/useContext)
-
-(def ^{:doc "React.useId — generates a unique, stable id suitable for accessibility attributes (matched between server and client)."}
-  use-id react/useId)
+;; Re-exports — see cljs.react.core for user-facing docs.
+(def ^:no-doc use-context react/useContext)
+(def ^:no-doc use-id      react/useId)
 
 (defn use-sync-external-store
   "Subscribe to an external store.
@@ -206,5 +204,5 @@
   "Subscribe to a ClojureScript atom. Returns the current value and re-renders
   only when the value changes. Structurally-equal updates are treated as
   no-ops — a swap! that produces a `=`-equal map won't re-render consumers."
-  [atom]
-  (use-selector atom not= identity [atom]))
+  [source]
+  (use-selector source not= identity [source]))

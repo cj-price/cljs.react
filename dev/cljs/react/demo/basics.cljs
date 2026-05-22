@@ -1,7 +1,6 @@
 (ns cljs.react.demo.basics
   (:require ["react" :as react]
-            [cljs.react.core :refer [Element]]
-            [cljs.react.hook :refer [use-state use-ref]]
+            [cljs.react.core :refer [Element use-state use-ref]]
             [cljs.react.demo.util :refer [CodeAndOutput H2 Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))
 

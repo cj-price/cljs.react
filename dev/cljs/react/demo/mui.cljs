@@ -12,8 +12,7 @@
             ["@mui/material/Stack$default"            :as MuiStack]
             ["@mui/material/Typography$default"       :as MuiTypography]
             ["@mui/material/Chip$default"             :as MuiChip]
-            [cljs.react.core :refer [Element]]
-            [cljs.react.hook :refer [use-state]]
+            [cljs.react.core :refer [Element use-state]]
             [cljs.react.demo.util :refer [CodeAndOutput H2 P Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))
 

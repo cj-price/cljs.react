@@ -38,6 +38,29 @@
           result (renderHook #(hook/use-context ctx))]
       (is (= :default (.. result -result -current))))))
 
+(deftest fragment-renders-children-test
+  (testing "Fragment groups children without adding a DOM wrapper"
+    (let [result (render (Element {:tag core/Fragment}
+                           (Element {:tag "span"} "a")
+                           (Element {:tag "span"} "b")))
+          spans (.-children (.-container result))]
+      (is (= 2 (.-length spans)))
+      (is (= "a" (.-textContent (aget spans 0))))
+      (is (= "b" (.-textContent (aget spans 1))))
+      (cleanup))))
+
+(deftest suspense-renders-fallback-test
+  (testing "Suspense renders fallback while a child suspends"
+    (let [;; A component that throws a never-resolving promise → suspends forever.
+          forever (js/Promise. (fn [_ _]))
+          Suspender (fn [] (throw forever))
+          result (render
+                   (Element {:tag core/Suspense
+                             :fallback (Element {:tag "p"} "loading…")}
+                     (react/createElement Suspender)))]
+      (is (= "loading…" (.. result -container -textContent)))
+      (cleanup))))
+
 (deftest element-varargs-children-test
   (testing "Element passes many children to React"
     (let [result (render (Element {:tag "ul"}
@@ -195,6 +218,19 @@
       (is (some? @@direct-call-ref-capture)
           "after mount, parent's RefAtom should deref to the DOM input node")
       (is (identical? input @@direct-call-ref-capture))
+      (cleanup))))
+
+(deftest defnc-forward-ref-raw-ref-via-cljsprops-test
+  (testing "calling a :forward-ref defnc with a raw React ref (not a RefAtom)
+            in the CLJS props map wires it to the DOM — the satisfies? fallback
+            in forward-ref unwraps RefAtoms but must pass raw refs through"
+    (let [raw-ref (react/createRef)
+          result  (render (RefInput {:ref raw-ref :placeholder "raw"}))
+          input   (.querySelector (.-container result) "input")]
+      (is (some? input))
+      (is (identical? input (.-current raw-ref))
+          "raw React ref in cljsProps :ref is populated after mount")
+      (is (= "raw" (.-placeholder input)))
       (cleanup))))
 
 ;;; :key hoist — keyed lists must not remount on reorder
@@ -383,6 +419,27 @@
         (is (some? (.-componentStack ^js @captured))
             "info.componentStack is part of the React 19 contract")
         (cleanup)
+        (finally (set! js/console.error orig))))))
+
+(deftest error-boundary-on-error-throwing-test
+  (testing ":on-error that itself throws must not break the fallback render"
+    (let [orig js/console.error
+          captured-err-logs (atom 0)]
+      (set! js/console.error (fn [& _] (swap! captured-err-logs inc)))
+      (try
+        (let [result (render
+                       (ErrorBoundary
+                         {:fallback (fn [err]
+                                      (Element {:tag "div" :data-testid "fb"}
+                                        (ex-message err)))
+                          :on-error (fn [_ _]
+                                      (throw (js/Error. "telemetry blew up")))}
+                         (component/create-cljs-element Throwing {:msg "child"})))
+              fb (.. result -container -firstChild)]
+          (is (some? fb) "fallback DOM still rendered despite throwing :on-error")
+          (is (= "child" (.-textContent fb))
+              "fallback receives the original child error, not the telemetry error")
+          (cleanup))
         (finally (set! js/console.error orig))))))
 
 ;;; StrictMode double-invocation safety
