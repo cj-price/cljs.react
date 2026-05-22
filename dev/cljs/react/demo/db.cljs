@@ -70,8 +70,8 @@
 
 (defnc DBDemo
   []
-  (DBProvider {:initial-value {:counter {:value 0}
-                               :user {:name "" :email ""}}}
+  (DBProvider {:value {:counter {:value 0}
+                       :user {:name "" :email ""}}}
     (Div {:className "w-full space-y-6"}
       (Div {:className "space-y-4"}
         (H4 {:className "text-sm font-semibold text-gray-700 uppercase tracking-wide"}
@@ -96,5 +96,5 @@
 
     (CodeAndOutput
      {:title "DBProvider & use-db"
-      :code "(defnc CounterDisplay []\n  (let [count (use-db [:counter])]\n    (Div @count)))\n\n(defnc CounterButton []\n  (let [count (use-db [:counter])]\n    (Button {:onClick #(swap! count inc)}\n      \"Increment\")))\n\n(defnc App []\n  (DBProvider {:initial-value {:counter 0}}\n    (CounterDisplay)\n    (CounterButton)))"}
+      :code "(defnc CounterDisplay []\n  (let [count (use-db [:counter])]\n    (Div @count)))\n\n(defnc CounterButton []\n  (let [count (use-db [:counter])]\n    (Button {:onClick #(swap! count inc)}\n      \"Increment\")))\n\n(defnc App []\n  (DBProvider {:value {:counter 0}}\n    (CounterDisplay)\n    (CounterButton)))"}
      (DBDemo))))

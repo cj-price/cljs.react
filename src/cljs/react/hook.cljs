@@ -208,6 +208,13 @@
 (defn use-state
   "Local component state. Returns a StateAtom that supports deref, reset!, and swap!.
 
+  `initial` is stored verbatim — including functions. (React.useState treats a
+  function argument as a lazy initializer; this wrapper protects fn values by
+  passing them through a thunk, so `(use-state my-handler)` stores `my-handler`
+  itself, not its return value.) Pass `:lazy? true` to opt back into lazy init:
+  `initial` is then expected to be a 0-arity fn called once on mount, and its
+  return value is stored.
+
   A fresh StateAtom value is returned each render with the current
   [value setter] tuple captured (matching React's snapshot semantics — `@s`
   in a closure reads the value at the render the closure was created in,
@@ -216,8 +223,12 @@
   StateAtoms backed by the same useState slot compare equal under `=` (setter
   identity is stable across renders), so a StateAtom is safe to place into
   cljs.react use-effect / use-memo / use-callback deps."
-  [initial]
-  (StateAtom. (react/useState initial)))
+  [initial & {:keys [lazy?]}]
+  (StateAtom.
+    (cond
+      lazy?         (react/useState initial)
+      (fn? initial) (react/useState (fn [] initial))
+      :else         (react/useState initial))))
 
 (defn use-selector
   "Subscribe to an IWatchable `source`, re-rendering only when `diff?` returns
@@ -271,7 +282,11 @@
                                              #js {:state state :snap new-snap})
                                      new-snap))))))
                        deps)]
-    (use-sync-external-store subscribe get-snapshot)))
+    ;; Pass get-snapshot as get-server-snapshot too: CLJS atoms hold the
+    ;; same data on server and client, and the snapshot path is pure (no
+    ;; subscription side-effects). Without this, useSyncExternalStore throws
+    ;; during hydration of any component using use-atom / use-db.
+    (use-sync-external-store subscribe get-snapshot get-snapshot)))
 
 (defn use-atom
   "Subscribe to a ClojureScript atom. Returns the current dereffed value and

@@ -233,17 +233,17 @@
 
     (CodeAndOutput
      {:title "Iterating Over Children"
-      :code ";; :children arrives as a CLJS seq (or nil) —\n;; iterate with for; don't forget :key.\n\n(defnc NumberedList\n  [{:keys [children]}]\n  (Element {:tag \"ol\"}\n    (for [[idx item] (map-indexed vector children)]\n      (Element {:tag \"li\" :key idx}\n        (Element {:tag \"span\"} (inc idx))\n        item))))\n\n(NumberedList nil\n  (Element {:tag \"span\"} \"First item\")\n  (Element {:tag \"span\"} \"Second item\")\n  (Element {:tag \"span\"} \"Third item\"))"}
+      :code "(defnc NumberedList\n  [{:keys [children]}]\n  (Element {:tag \"ol\"}\n    (for [[idx item] (map-indexed vector children)]\n      (Element {:tag \"li\" :key idx}\n        (Element {:tag \"span\"} (inc idx))\n        item))))\n\n(NumberedList nil\n  (Element {:tag \"span\"} \"First item\")\n  (Element {:tag \"span\"} \"Second item\")\n  (Element {:tag \"span\"} \"Third item\"))"}
      (IterChildrenDemo))
 
     (CodeAndOutput
      {:title "Vector of Elements as a Prop"
-      :code ";; Props are just CLJS data — pass elements via any\n;; key. Useful when children semantics aren't a fit,\n;; e.g. multiple slots, ordered groups, or data-driven\n;; layouts like breadcrumbs / tabs.\n\n(defnc Breadcrumbs\n  [{:keys [items]}]\n  (Element {:tag \"nav\"}\n    (for [[idx item] (map-indexed vector items)]\n      (Element {:tag \"span\" :key idx}\n        (when (pos? idx)\n          (Element {:tag \"span\"} \"/\"))\n        item))))\n\n(Breadcrumbs\n  {:items [(Element {:tag \"a\" :href \"#\"} \"Home\")\n           (Element {:tag \"a\" :href \"#\"} \"Library\")\n           (Element {:tag \"a\" :href \"#\"} \"Topics\")\n           (Element {:tag \"span\"} \"ClojureScript\")]})"}
+      :code ";; Elements are plain CLJS data — pass them through any prop key.\n\n(defnc Breadcrumbs\n  [{:keys [items]}]\n  (Element {:tag \"nav\"}\n    (for [[idx item] (map-indexed vector items)]\n      (Element {:tag \"span\" :key idx}\n        (when (pos? idx)\n          (Element {:tag \"span\"} \"/\"))\n        item))))\n\n(Breadcrumbs\n  {:items [(Element {:tag \"a\" :href \"#\"} \"Home\")\n           (Element {:tag \"a\" :href \"#\"} \"Library\")\n           (Element {:tag \"a\" :href \"#\"} \"Topics\")\n           (Element {:tag \"span\"} \"ClojureScript\")]})"}
      (VectorPropDemo))
 
     (CodeAndOutput
      {:title "Interop — Using a JS Component"
-      :code ";; RawBadge is a plain JS React component\n;; (imagine it came from an npm package).\n;; Pass the reference as :tag — keyword props\n;; are forwarded as flat JS props.\n\n(Element {:tag RawBadge :label \"New\"})\n(Element {:tag RawBadge :label \"Beta\"})\n(Element {:tag RawBadge :label \"Alpha\"})"}
+      :code ";; Pass any JS component as :tag — keyword props become JS props.\n\n(Element {:tag RawBadge :label \"New\"})\n(Element {:tag RawBadge :label \"Beta\"})\n(Element {:tag RawBadge :label \"Alpha\"})"}
      (Element {:tag "div" :style {:display "flex" :gap "0.5rem" :flexWrap "wrap"}}
        (Element {:tag RawBadge :label "New"})
        (Element {:tag RawBadge :label "Beta"})
@@ -251,7 +251,7 @@
 
     (CodeAndOutput
      {:title "Interop — Adapting a JS Component"
-      :code ";; Wrap the Element call in a plain fn so callers\n;; don't have to keep typing :tag RawBadge.\n\n(defn Badge [props]\n  (Element (assoc props :tag RawBadge)))\n\n(Badge {:label \"New\"})\n(Badge {:label \"Beta\"})\n(Badge {:label \"Alpha\"})"}
+      :code "(defn Badge [props]\n  (Element (assoc props :tag RawBadge)))\n\n(Badge {:label \"New\"})\n(Badge {:label \"Beta\"})\n(Badge {:label \"Alpha\"})"}
      (Element {:tag "div" :style {:display "flex" :gap "0.5rem" :flexWrap "wrap"}}
        (Badge {:label "New"})
        (Badge {:label "Beta"})
@@ -259,17 +259,17 @@
 
     (CodeAndOutput
      {:title "Interop — Event Handlers"
-      :code ";; Keyword prop names pass through unchanged —\n;; use camelCase like React expects (:onClick, :onChange).\n\n(defnc ClickDemo []\n  (let [clicks (use-state 0)]\n    (Element {:tag \"div\"}\n      (Element {:tag RawButton\n                :label \"Click me\"\n                :onClick #(swap! clicks inc)})\n      (Element {:tag \"span\"}\n        \"Clicks: \" @clicks))))"}
+      :code "(defnc ClickDemo []\n  (let [clicks (use-state 0)]\n    (Element {:tag \"div\"}\n      (Element {:tag RawButton\n                :label \"Click me\"\n                :onClick #(swap! clicks inc)})\n      (Element {:tag \"span\"}\n        \"Clicks: \" @clicks))))"}
      (ClickDemo))
 
     (CodeAndOutput
      {:title "Interop — Children Forwarding"
-      :code ";; Children passed to Element become React\n;; props.children on the JS side — no wrapping needed.\n\n(Element {:tag RawPanel :title \"Hello from CLJS\"}\n  (Element {:tag \"p\"}\n    \"These children were passed in from ClojureScript.\")\n  (Element {:tag \"p\"}\n    \"The JS component sees them as props.children.\"))"}
+      :code "(Element {:tag RawPanel :title \"Hello from CLJS\"}\n  (Element {:tag \"p\"}\n    \"These children were passed in from ClojureScript.\")\n  (Element {:tag \"p\"}\n    \"The JS component sees them as props.children.\"))"}
      (Element {:tag RawPanel :title "Hello from CLJS"}
        (Element {:tag "p"} "These children were passed in from ClojureScript.")
        (Element {:tag "p"} "The JS component sees them as props.children.")))
 
     (CodeAndOutput
      {:title "Interop — Ref to a JS Component"
-      :code ";; use-ref returns a RefAtom. Pass it directly as\n;; :ref — clj->js-props unwraps it automatically before\n;; handing it to the JS component. Deref @ref to get\n;; the live DOM node and call any JS method on it.\n\n(defnc FocusDemo []\n  (let [input-ref (use-ref nil)]\n    (Element {:tag \"div\"}\n      (Element {:tag RawTextBox :ref input-ref})\n      (Element {:tag \"button\"\n                :onClick #(when-let [el @input-ref]\n                            (.focus el))}\n        \"Focus\")\n      (Element {:tag \"button\"\n                :onClick #(when-let [el @input-ref]\n                            (.focus el)\n                            (.select el))}\n        \"Select all\"))))"}
+      :code ";; use-ref returns a RefAtom — pass as :ref; @ref is the DOM node.\n\n(defnc FocusDemo []\n  (let [input-ref (use-ref nil)]\n    (Element {:tag \"div\"}\n      (Element {:tag RawTextBox :ref input-ref})\n      (Element {:tag \"button\"\n                :onClick #(when-let [el @input-ref]\n                            (.focus el))}\n        \"Focus\")\n      (Element {:tag \"button\"\n                :onClick #(when-let [el @input-ref]\n                            (.focus el)\n                            (.select el))}\n        \"Select all\"))))"}
      (FocusDemo))))

@@ -7,7 +7,7 @@
   (:require
    [cljs.react.hook :as hook]))
 
-(deftype ^:no-doc FormHandle [form-atom opts-ref handler-cache])
+(deftype ^:no-doc FormHandle [form-atom opts-ref])
 
 (defn- make-state [values]
   {:values       values
@@ -172,18 +172,6 @@
                                         (swap! form-atom assoc :validating? false))))))))]
     #js {:onChange on-change :onBlur on-blur}))
 
-(defn- ensure-handlers!
-  "Returns a memoized #js {:onChange :onBlur} pair for a given (field-key, checkbox?).
-  Cache is a two-level CLJS map: field-key → {boolean → handlers}. Two-level
-  lookup avoids allocating a fresh `[field-key checkbox?]` vector on every render."
-  [^FormHandle handle field-key checkbox?]
-  (let [cache-atom (.-handler-cache handle)
-        cb?        (boolean checkbox?)]
-    (or (get (get @cache-atom field-key) cb?)
-        (let [handlers (build-handlers handle field-key checkbox?)]
-          (swap! cache-atom assoc-in [field-key cb?] handlers)
-          handlers))))
-
 ;;;; Hooks
 
 (defn use-form
@@ -227,8 +215,7 @@
       (let [initial (unwrap-values values)]
         (reset! handle-ref
                 (FormHandle. (atom (make-state initial))
-                             (atom opts)
-                             (atom {})))))
+                             (atom opts)))))
     ;; Keep opts-ref current every render — skip the reset! when opts is stable
     ;; so unchanged-render paths avoid an atom write + watch fan-out.
     (let [opts-ref (.-opts-ref ^FormHandle @handle-ref)]
@@ -273,7 +260,14 @@
                            (fn [o n] (field-diff? o n field-key))
                            (fn [s] (field-snap s field-key))
                            [field-key])
-        ^js handlers (ensure-handlers! handle field-key checkbox?)
+        cb?  (boolean checkbox?)
+        ;; Memoize per consumer — handlers stay identical across renders of
+        ;; the same component, and are garbage-collected when the component
+        ;; unmounts. Avoids the per-FormHandle cache that would otherwise
+        ;; leak entries for every dynamic field-key (e.g. [:items 0 :name]).
+        ^js handlers (hook/use-memo
+                       (fn [] (build-handlers handle field-key cb?))
+                       [handle field-key cb?])
         value (:value snap)]
     {:value    value
      ;; `true?` (not `boolean`) so :checked is only true for an explicit `true`

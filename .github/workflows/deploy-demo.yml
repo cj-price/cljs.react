@@ -1,0 +1,81 @@
+name: deploy-demo
+
+on:
+  push:
+    branches: [trunk]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Cache Nix store
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Cache Maven (.m2)
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/deps.edn', '**/shadow-cljs.edn') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-
+
+      - name: Cache shadow-cljs build state
+        uses: actions/cache@v4
+        with:
+          path: .shadow-cljs
+          key: ${{ runner.os }}-shadow-cljs-release-${{ hashFiles('**/shadow-cljs.edn') }}
+          restore-keys: |
+            ${{ runner.os }}-shadow-cljs-release-
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install JS deps
+        run: nix-shell --run 'pnpm install --frozen-lockfile'
+
+      - name: Build release-demo
+        run: nix-shell --run 'pnpm exec shadow-cljs release release-demo'
+
+      - name: Assemble dist
+        run: |
+          mkdir -p dist
+          cp public/index.html dist/
+          cp -r target/release-demo/js dist/
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

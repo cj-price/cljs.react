@@ -1,7 +1,7 @@
 (ns cljs.react.db
   "Global state via a single Clojure atom held in React context. `DBProvider`
-  installs the atom; `use-db`/`use-db-atom` subscribe to all or part of it
-  with per-path fan-out.
+  installs the atom; `use-db` subscribes to all or part of it with per-path
+  fan-out.
 
   Re-exported from `cljs.react.core`; prefer that namespace in consumer code."
   (:require
@@ -77,11 +77,11 @@
 
 (defn- db-provider-inner
   [^js props]
-  (let [initial-value (.-initialValue props)
+  (let [value (.-value props)
         children (.-children props)
         db-ref (hook/use-ref nil)
         _ (when (nil? @db-ref)
-            (reset! db-ref (atom initial-value)))
+            (reset! db-ref (if (satisfies? IDeref value) value (atom value))))
         db @db-ref]
     (react/createElement
       (.-Provider db-context)
@@ -90,20 +90,25 @@
 
 (defn DBProvider
   "Provide a database context for child components.
-  Usage: (DBProvider {:initial-value {...}} child1 child2 ...)"
-  [{:keys [initial-value]} & children]
+
+  Props map (all keys optional):
+    :value - the db. Accepts either:
+             • an atom (or any IDeref+IReset+ISwap+IWatchable) — used as-is so
+               the caller owns it and can watch/snapshot it from outside React
+             • a plain CLJS value — atom-ified internally on first render
+             • omitted/nil — defaults to (atom {})
+             Captured once on mount; later re-renders with a different :value
+             do not replace the running atom.
+
+  Usage:
+    (DBProvider {} child)                          ; defaults to (atom {})
+    (DBProvider {:value {:user nil}} child)        ; plain value, atom-ified
+    (DBProvider {:value my-atom} child)            ; caller-owned atom"
+  [{:keys [value]} & children]
   (apply react/createElement
          db-provider-inner
-         #js {:initialValue initial-value}
+         #js {:value (if (nil? value) {} value)}
          children))
-
-(defn use-db-atom
-  "Returns the raw db atom from context. Throws if called outside a `DBProvider`."
-  []
-  (or (hook/use-context db-context)
-      (throw (ex-info
-               "use-db / use-db-atom called outside a DBProvider — wrap your tree in (DBProvider {:initial-value ...} ...)"
-               {:type ::no-provider}))))
 
 (defn use-db
   "Subscribe to the db. Returns a Cursor (deref / reset! / swap!) that re-renders
@@ -125,7 +130,10 @@
      (throw (ex-info (str "use-db: path must be a vector (got "
                           (pr-str path) ")")
                      {:type ::invalid-cursor-path :got path})))
-   (let [atom    (use-db-atom)
+   (let [atom    (or (hook/use-context db-context)
+                     (throw (ex-info
+                              "use-db called outside a DBProvider — wrap your tree in (DBProvider {:value ...} ...)"
+                              {:type ::no-provider})))
          ;; Avoid `(seq path)` inside the per-call closures below — on a
          ;; PersistentVector, seq allocates a ChunkedSeq each call, which
          ;; use-selector invokes multiple times per render. `count` is O(1)

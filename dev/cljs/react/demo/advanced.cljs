@@ -96,5 +96,5 @@
 
     (CodeAndOutput
      {:title "Memoization with React.memo"
-      :code "(defnc RenderCounter\n  [{:keys [name]}]\n  (let [count (use-ref 0)]\n    (swap! count inc)\n    (Div\n      (Strong name)\n      (Span \" - Renders: \" @count))))\n\n;; defnc automatically wraps\n;; components with React.memo\n;; using CLJS equality"}
+      :code "(defnc RenderCounter\n  [{:keys [name]}]\n  (let [count (use-ref 0)]\n    (swap! count inc)\n    (Div\n      (Strong name)\n      (Span \" - Renders: \" @count))))\n\n;; defnc auto-wraps with React.memo + CLJS equality"}
      (MemoizationDemo))))

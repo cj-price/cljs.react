@@ -7,9 +7,9 @@
 
 (defn db-wrapper
   "Creates a wrapper component that provides DBProvider context"
-  [initial-value]
+  [value]
   (fn [props]
-    (db/DBProvider {:initial-value initial-value}
+    (db/DBProvider {:value value}
                    (.-children props))))
 
 (deftest use-db-root-test
@@ -131,13 +131,41 @@
         (is (= 2 @cursor-b-after))
         (is (identical? cursor-b-before cursor-b-after))))))
 
-(deftest use-db-atom-test
-  (testing "use-db-atom returns the atom"
-    (let [result (renderHook #(db/use-db-atom)
-                             #js {:wrapper (db-wrapper {:test true})})
-          atom (.. result -result -current)]
-      (is (satisfies? IDeref atom))
-      (is (= {:test true} @atom)))))
+(deftest db-provider-default-value-test
+  (testing "DBProvider with no :value defaults to (atom {})"
+    (let [result (renderHook #(db/use-db)
+                             #js {:wrapper (fn [props]
+                                             (db/DBProvider {}
+                                               (.-children props)))})
+          cursor (.. result -result -current)]
+      (is (= {} @cursor))))
+  (testing "DBProvider with :value nil also defaults to {}"
+    (let [result (renderHook #(db/use-db)
+                             #js {:wrapper (db-wrapper nil)})
+          cursor (.. result -result -current)]
+      (is (= {} @cursor)))))
+
+(deftest db-provider-user-owned-atom-test
+  (testing "DBProvider with an atom :value uses it directly — external mutations are visible"
+    (let [user-atom (atom {:n 1})
+          wrapper (db-wrapper user-atom)
+          result (renderHook #(db/use-db [:n])
+                             #js {:wrapper wrapper})]
+      (is (= 1 @(.. result -result -current)))
+      ;; Mutations through the cursor land in the caller's atom
+      (act #(reset! (.. result -result -current) 99))
+      (is (= 99 (:n @user-atom)) "cursor reset! propagates to user atom")
+      ;; External mutations on the atom are observable via the cursor (after re-render)
+      (act #(reset! user-atom {:n 7}))
+      (is (= 7 @(.. result -result -current))
+          "external reset! on user atom propagates to cursor")))
+  (testing "DBProvider does not double-wrap a passed-in atom"
+    (let [user-atom (atom {:k "v"})
+          result (renderHook #(db/use-db)
+                             #js {:wrapper (db-wrapper user-atom)})
+          cursor (.. result -result -current)]
+      ;; Cursor's underlying atom is identical to the user's
+      (is (identical? user-atom (.-atom cursor))))))
 
 (deftest cursor-notify-watches-throws-test
   (testing "-notify-watches on a Cursor throws — callers should use swap!/reset!"
@@ -146,10 +174,10 @@
       (is (thrown-with-msg? js/Error #"does not support -notify-watches"
             (-notify-watches c nil nil))))))
 
-(deftest use-db-atom-outside-provider-throws-test
-  (testing "use-db-atom throws when called without a DBProvider in the tree"
+(deftest use-db-outside-provider-throws-test
+  (testing "use-db throws when called without a DBProvider in the tree"
     (is (thrown-with-msg? js/Error #"outside a DBProvider"
-          (renderHook #(db/use-db-atom))))))
+          (renderHook #(db/use-db))))))
 
 (deftest cursor-add-watch-fires-on-path-change-test
   (testing "Cursor add-watch fires when the value at path changes"

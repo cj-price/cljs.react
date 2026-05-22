@@ -345,6 +345,63 @@
       (is (= 2 @memo-count) "different CLJS content → body runs")
       (cleanup))))
 
+;;; memo-component children comparator
+
+(def ^:private deep-count (atom 0))
+
+(defn- deep-inner [{:keys [children]}]
+  (swap! deep-count inc)
+  (Element {:tag "ul"} children))
+
+(def DeepList (component/memo-component deep-inner))
+
+(defn- build-deep-children [xs]
+  ;; Mirrors the `for`-pattern: fresh React elements each call, same data.
+  (vec (for [x xs]
+         (component/create-cljs-element MemoBasic {:x x :y (* x 2)}))))
+
+(deftest memo-component-deep-children-test
+  (testing "default comparator memoizes across re-renders with for-derived children"
+    (reset! deep-count 0)
+    (let [result (render (apply component/create-cljs-element DeepList {}
+                                (build-deep-children [1 2 3])))]
+      (is (= 1 @deep-count) "first render runs the body")
+      (.rerender result (apply component/create-cljs-element DeepList {}
+                               (build-deep-children [1 2 3])))
+      (is (= 1 @deep-count)
+          "fresh-but-structurally-equal children → body not re-invoked")
+      (.rerender result (apply component/create-cljs-element DeepList {}
+                               (build-deep-children [1 2 4])))
+      (is (= 2 @deep-count) "data change in children → body runs")
+      (cleanup))))
+
+(def ShallowList (component/memo-component deep-inner :shallow? true))
+
+(deftest memo-component-shallow-opt-out-test
+  (testing ":shallow? true falls back to identity-only children compare"
+    (reset! deep-count 0)
+    (let [result (render (apply component/create-cljs-element ShallowList {}
+                                (build-deep-children [1 2 3])))]
+      (is (= 1 @deep-count))
+      (.rerender result (apply component/create-cljs-element ShallowList {}
+                               (build-deep-children [1 2 3])))
+      (is (= 2 @deep-count)
+          "fresh children identity → body runs even though data is equal")
+      (cleanup))))
+
+(deftest memo-component-dom-children-deep-test
+  (testing "default comparator memoizes DOM-element children with fresh JS props"
+    (reset! deep-count 0)
+    (let [mk #(Element {:tag "li" :className "row"} "x")
+          result (render (component/create-cljs-element DeepList {}
+                                                       (mk) (mk) (mk)))]
+      (is (= 1 @deep-count))
+      (.rerender result (component/create-cljs-element DeepList {}
+                                                      (mk) (mk) (mk)))
+      (is (= 1 @deep-count)
+          "fresh DOM elements with identical JS props compare equal")
+      (cleanup))))
+
 ;;; displayName
 
 (defnc ^:private DisplayNameProbe [_]
@@ -569,14 +626,14 @@
   (testing "DBProvider under StrictMode keeps the db identity stable"
     (let [seen (atom [])
           Probe (fn [_]
-                  (let [db (core/use-db-atom)]
-                    (swap! seen conj db))
+                  (let [cursor (core/use-db)]
+                    (swap! seen conj cursor))
                   (Element {:tag "i"}))
           memoized (component/memo-component Probe)
           result (render (strict
-                           (core/DBProvider {:initial-value {:x 1}}
+                           (core/DBProvider {:value {:x 1}}
                              (component/create-cljs-element memoized {}))))]
       (is (pos? (count @seen)))
-      (is (apply identical? @seen)
-          "all renders observe the same db atom")
+      (is (apply = @seen)
+          "all renders observe an =-equal root cursor (same underlying atom + path)")
       (.unmount result))))

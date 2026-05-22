@@ -1,14 +1,11 @@
 # cljs.react
 
+**[Live demo →](https://cj-price.github.io/cljs.react/)**
+
 Idiomatic ClojureScript bindings for React 19. Element DSL, `defnc` function
 components, hooks that return CLJS atoms, a `Cursor`-based global store, and a
 per-field form module — all built so persistent data structures flow through
 React without constant `clj->js` / `js->clj` churn.
-
-**Status:** v0.x, pre-release. Small breaking changes may land at minor
-versions until v1.0. Anything under `cljs.react.{component,hook,db,form,error-boundary}`
-is implementation detail — require `cljs.react.core` and `cljs.react.dom` from
-application code.
 
 ## Install
 
@@ -100,9 +97,8 @@ Everything below is re-exported from `cljs.react.core` unless otherwise noted.
 
 | Symbol | Purpose |
 | --- | --- |
-| `DBProvider` | Install an atom at the root of the tree |
+| `DBProvider` | Install the db at the root of the tree. `:value` may be an atom (used as-is) or a plain value (atom-ified); defaults to `(atom {})` |
 | `use-db` | Subscribe to the db; returns a Cursor (deref / reset! / swap!). 0-arity is the root cursor; 1-arity takes a vector path. |
-| `use-db-atom` | Return the raw db atom (no subscription) |
 
 ### Forms
 
@@ -249,27 +245,6 @@ a cursor scoped to a path. `=`-stable per path, so safe in deps:
 Calling `use-db` outside a `DBProvider` throws `ex-info` with `:type
 :cljs.react.db/no-provider`.
 
-### `FormHandle` — returned by `use-form`
-
-Opaque. Pass to `use-field` / `use-form-meta` / `on-submit` / `reset-form!`
-etc. The underlying form-state atom is exposed via `form-atom` for testing
-and devtools; deref yields:
-
-```clojure
-{:values        {...}      ;; current values
- :errors        {...}      ;; field-key → error
- :dirty         #{...}     ;; field-keys the user has changed
- :touched       #{...}     ;; field-keys that have been blurred or submitted
- :validating?   false      ;; true while an async validator is in flight
- :submitting?   false      ;; true while a submit is in flight
- :submitted?    false      ;; true after a submit completes successfully
- :submit-error  nil}       ;; error from the most recent failed submit
-```
-
-`use-field` returns a map with `:value`, `:checked`, `:error`, `:dirty`,
-`:onChange`, and `:onBlur`. Both `:value` and `:checked` are always present so
-destructuring is uniform across field types — pick the one your input needs.
-
 ## Troubleshooting
 
 ### Do I need `#js` for prop values?
@@ -302,15 +277,6 @@ Wrap it:
 (ErrorBoundary
   {:fallback (fn [err] (MyFallback {:error err}))}
   ...)
-```
-
-### `use-db` throws on startup
-
-`use-db` must be called from inside a `DBProvider`. The throw is `ex-info`
-with `:type :cljs.react.db/no-provider`. Mount the provider at the root:
-
-```clojure
-(dom/render root (DBProvider {:initial-value {...}} (App)))
 ```
 
 ### Refs and DOM interop

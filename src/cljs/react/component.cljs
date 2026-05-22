@@ -199,9 +199,87 @@
       cljs-props
       (assoc cljs-props :children children))))
 
+(declare element=)
+
+(defn- js-value=
+  "Structural equality on values found inside React props/children. Walks JS
+  arrays and plain JS objects recursively; routes React-element values through
+  [[element=]]; falls back to CLJS `=` for primitives, CLJS values, and
+  functions. Used by the deep comparator."
+  [a b]
+  (cond
+    (identical? a b) true
+    ;; React elements — route through element= so cljsProps gets compared as a
+    ;; CLJS map, not via JS-object walk.
+    (and (react/isValidElement a) (react/isValidElement b))
+    (element= a b)
+    ;; JS arrays (e.g. multi-child arrays, or CLJS vectors that have already
+    ;; been converted by clj->js-props).
+    (and (array? a) (array? b))
+    (let [na (alength a)]
+      (and (== na (alength b))
+           (loop [i 0]
+             (cond
+               (>= i na)                          true
+               (js-value= (aget a i) (aget b i))  (recur (inc i))
+               :else                              false))))
+    ;; Plain JS objects (e.g. raw JS props on DOM elements, nested :style maps).
+    (and (object? a) (object? b))
+    (let [ka (js-keys a)
+          kb (js-keys b)
+          n  (alength ka)]
+      (and (== n (alength kb))
+           (loop [i 0]
+             (if (>= i n)
+               true
+               (let [k (aget ka i)]
+                 (if (js-value= (gobj/get a k) (gobj/get b k))
+                   (recur (inc i))
+                   false))))))
+    :else (= a b)))
+
+(defn- element=
+  "Structural equality on two React elements. Two elements are `=` when they
+  share `type` (identity) and `key`, and their props are structurally equal:
+  - For library-created elements (those carrying a `cljsProps` slot), the
+    CLJS map is compared with `=` and `children` is recursed via [[js-value=]].
+  - For DOM elements (raw JS props), the props object is walked via
+    [[js-value=]] (same-key set, same value at each key)."
+  [^js a ^js b]
+  (or (identical? a b)
+      (and (object? a) (object? b)
+           (identical? (.-type a) (.-type b))
+           (let [ka (.-key a) kb (.-key b)]
+             (or (identical? ka kb) (= ka kb)))
+           (let [ap (.-props a) bp (.-props b)]
+             (or (identical? ap bp)
+                 (and (some? ap) (some? bp)
+                      (let [acp (gobj/get ap "cljsProps")]
+                        (if (some? acp)
+                          (and (= acp (gobj/get bp "cljsProps"))
+                               (js-value= (gobj/get ap "children")
+                                          (gobj/get bp "children")))
+                          (js-value= ap bp)))))))))
+
 (defn- cljs-props-equal?
-  "React.memo comparator: CLJS = on cljsProps, JS === on children.
-  Used by both memo-component and memo-forward-ref."
+  "Default memo comparator: structural `=` on `cljsProps`, and structural
+  walk on `children` via [[js-value=]] so freshly-allocated trees (from `for`,
+  inline literals, etc.) compare equal when their data matches. Cost is
+  bounded by the size of the children tree. For hot paths where the
+  comparator cost outweighs the component body, opt into the shallow
+  variant via `memo-component`'s `:shallow? true` kwarg."
+  [prev-js-props next-js-props]
+  (and (= (gobj/get prev-js-props "cljsProps")
+          (gobj/get next-js-props "cljsProps"))
+       (js-value= (gobj/get prev-js-props "children")
+                  (gobj/get next-js-props "children"))))
+
+(defn- cljs-props-shallow-equal?
+  "Shallow memo comparator: `=` on `cljsProps`, identity (`===`) on children.
+  Selected via `memo-component`'s `:shallow? true`. Cheaper per-call but
+  defeats memo whenever a parent constructs fresh child elements each render
+  (e.g. via `for`). Reach for it only when the deep comparator measurably
+  outweighs the component body work."
   [prev-js-props next-js-props]
   (and (= (gobj/get prev-js-props "cljsProps")
           (gobj/get next-js-props "cljsProps"))
@@ -219,20 +297,29 @@
 (defn memo-component
   "Wrap component with React.memo using ClojureScript equality.
 
-  The wrapper extracts CLJS props and compares them using CLJS =.
-  Also compares React-managed children to detect changes.
-  This enables efficient memoization with persistent data structures.
+  Default comparator semantics:
+  - `:cljsProps` (the CLJS map passed in props position) is compared with `=`,
+    so persistent data structures memoize correctly.
+  - `children` are compared structurally — React elements recurse on `type`,
+    `key`, `cljsProps` / raw JS props, and nested children. Freshly-allocated
+    children trees (e.g. from `for`) memoize correctly when their data matches.
+    Cost is bounded by the children tree size.
 
   Args:
-    component-fn: Function taking cljs props map, returning React element
+    component-fn   - Function taking cljs props map, returning a React element.
+    :shallow? true - Opt out of the structural children walk: children compare
+                     by identity (`===`) only. Cheaper per-call but defeats
+                     memo whenever a parent constructs fresh child elements.
+                     Use only when the deep comparator measurably outweighs
+                     the component body — measure with `bb bench` first.
 
   Returns:
-    Memoized React component"
-  [component-fn]
+    Memoized React component."
+  [component-fn & {:keys [shallow?]}]
   (propagate-display-name!
     component-fn
     (react/memo (fn [js-props] (component-fn (unwrap-cljs-props js-props)))
-                cljs-props-equal?)))
+                (if shallow? cljs-props-shallow-equal? cljs-props-equal?))))
 
 (defn memo-component-js
   "Wrap component with React.memo for components that accept raw JS props.
@@ -318,8 +405,11 @@
           (component-fn (assoc props :ref (hook/->RefAtom raw))))))))
 
 (defn memo-forward-ref
-  "Combine forward-ref + React.memo with CLJS equality comparison."
-  [component-fn]
+  "Combine forward-ref + React.memo with CLJS equality comparison.
+
+  Accepts the same `:shallow? true` opt-out as [[memo-component]]."
+  [component-fn & {:keys [shallow?]}]
   (propagate-display-name!
     component-fn
-    (react/memo (forward-ref component-fn) cljs-props-equal?)))
+    (react/memo (forward-ref component-fn)
+                (if shallow? cljs-props-shallow-equal? cljs-props-equal?))))

@@ -35,14 +35,7 @@
   Calling a defnc through `Element` hands the component raw JS props instead of
   a CLJS map; the component body will see nothing usable.
 
-  A nil :tag throws ex-info with :type :cljs.react.component/missing-tag.
-
-  `Element` honors `component/*create-element*`, which defaults to
-  `react/createElement` but can be rebound to use alternative renderers
-  (for example a custom JSX runtime). The escape-hatch helpers
-  `make-element-fn` / `make-create-cljs-element-fn` build standalone
-  Element-shaped fns bound to a specific renderer; they do not read this
-  dynamic var."
+  A nil :tag throws ex-info with :type :cljs.react.component/missing-tag."
   ([{:keys [tag] :as props}]
    (component/*create-element* tag (component/element-props tag props)))
   ([{:keys [tag] :as props} c1]
@@ -143,7 +136,11 @@
   and `swap!`.
 
   Args:
-    initial - initial value, or a 0-arity fn to lazily compute it on mount
+    initial      - initial value. Stored verbatim, including functions — to
+                   store a fn as state, just pass it.
+    :lazy? true  - opt into React's lazy-init semantics: `initial` must be a
+                   0-arity fn called once on mount, and its return value is
+                   stored. Use for expensive initial computations.
 
   A fresh StateAtom value is returned each render with the current
   [value setter] tuple captured (matching React's snapshot semantics — `@s`
@@ -273,16 +270,21 @@
 
 ;; Re-export db utilities
 (def ^{:doc "Provide a database context for child components — installs a single
-  CLJS atom that descendants can read/write via `use-db` / `use-db-atom`.
+  CLJS atom that descendants can read/write via `use-db`.
 
-  Props map:
-    :initial-value - the initial db value (any CLJS data). Captured once on
-                     mount; later re-renders with a different :initial-value
-                     do not replace the running atom.
+  Props map (all keys optional):
+    :value - the db. Accepts either:
+             • an atom — used as-is so the caller owns it and can watch or
+               snapshot it from outside React
+             • a plain CLJS value — atom-ified internally on first render
+             • omitted/nil — defaults to (atom {})
+             Captured once on mount; later re-renders with a different :value
+             do not replace the running atom.
 
   Usage:
-    (DBProvider {:initial-value {:user nil :todos []}}
-      (App))"}
+    (DBProvider {} (App))                                ; defaults to (atom {})
+    (DBProvider {:value {:user nil :todos []}} (App))    ; plain value
+    (DBProvider {:value my-atom} (App))                  ; caller-owned atom"}
   DBProvider db/DBProvider)
 (def ^{:doc "Subscribe to the db and return a Cursor scoped to `path`.
 
@@ -302,14 +304,6 @@
   Throws ex-info `:type :cljs.react.db/no-provider` if called outside a
   `DBProvider`."}
   use-db db/use-db)
-(def ^{:doc "Return the raw db atom from context. Does not subscribe — `use-db` is
-  the right primitive for reactive reads. Use this when you need to imperatively
-  add a watch, snapshot the whole db once, or hand the atom to a non-reactive
-  helper.
-
-  Throws ex-info `:type :cljs.react.db/no-provider` if called outside a
-  `DBProvider`."}
-  use-db-atom db/use-db-atom)
 
 ;; Re-export form utilities
 (def ^{:doc "Create a form handle owning the form-state atom. Pass the returned

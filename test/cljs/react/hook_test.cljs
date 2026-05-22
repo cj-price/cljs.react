@@ -67,7 +67,26 @@
           arr (.. result -result -current)
           a (aget arr 0)
           b (aget arr 1)]
-      (is (not= a b)))))
+      (is (not= a b))))
+
+  (testing "fn initial value is stored verbatim (not invoked as lazy initializer)"
+    ;; React.useState lazily invokes any fn argument; the wrapper protects
+    ;; CLJS callers who pass a fn as ordinary state (e.g. an event handler).
+    (let [handler (fn [_x] :called)
+          result  (renderHook #(hook/use-state handler))
+          state   (.. result -result -current)]
+      (is (identical? handler @state)
+          "the fn itself should be stored, not its return value")))
+
+  (testing ":lazy? true opts back into React's lazy-init semantics"
+    (let [calls   (atom 0)
+          init-fn (fn [] (swap! calls inc) :computed)
+          result  (renderHook #(hook/use-state init-fn :lazy? true))
+          state   (.. result -result -current)]
+      (is (= :computed @state) "stored value is init-fn's return")
+      (is (= 1 @calls) "init-fn invoked exactly once on mount")
+      (.rerender result)
+      (is (= 1 @calls) "init-fn not invoked again on re-render"))))
 
 (deftest cljs-deps-test
   (testing "same deps keep counter stable"
