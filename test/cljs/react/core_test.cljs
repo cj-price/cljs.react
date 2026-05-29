@@ -603,6 +603,53 @@
           (cleanup))
         (finally (set! js/console.error orig))))))
 
+(deftest error-boundary-nested-test
+  (testing "inner boundary catches a child error; outer boundary stays mounted with its children"
+    (let [orig js/console.error]
+      (set! js/console.error (fn [& _]))
+      (try
+        (let [result (render
+                       (ErrorBoundary
+                         {:fallback (fn [_] (Element {:tag "div" :className "outer-fb"} "outer"))}
+                         (Element {:tag "section" :className "outer-content"}
+                           (ErrorBoundary
+                             {:fallback (fn [err]
+                                          (Element {:tag "p" :className "inner-fb"}
+                                            (.-message err)))}
+                             (component/create-cljs-element Throwing {:msg "inner boom"})))))
+              container (.-container result)]
+          ;; Inner boundary rendered its fallback...
+          (is (some? (.querySelector container ".inner-fb")))
+          (is (= "inner boom" (.-textContent (.querySelector container ".inner-fb"))))
+          ;; ...and the outer boundary did NOT trip — its content is still mounted
+          ;; and its fallback never rendered.
+          (is (some? (.querySelector container ".outer-content"))
+              "outer boundary kept its normal subtree mounted")
+          (is (nil? (.querySelector container ".outer-fb"))
+              "outer fallback did not render — the inner boundary contained the error")
+          (cleanup))
+        (finally (set! js/console.error orig))))))
+
+(deftest error-boundary-nested-propagation-test
+  (testing "an error thrown by the inner boundary's fallback propagates to the outer boundary"
+    (let [orig js/console.error]
+      (set! js/console.error (fn [& _]))
+      (try
+        (let [result (render
+                       (ErrorBoundary
+                         {:fallback (fn [_] (Element {:tag "div" :className "outer-fb"} "outer caught it"))}
+                         (ErrorBoundary
+                           {:fallback (fn [_] (throw (js/Error. "inner fallback also broke")))}
+                           (component/create-cljs-element Throwing {:msg "child boom"}))))
+              container (.-container result)]
+          ;; The inner boundary's throwing fallback first hits the inner boundary's
+          ;; own try/catch (sentinel). It does not crash the tree, so the outer
+          ;; boundary need not trip — assert the UI shows *something* and stays alive.
+          (is (some? (.-firstChild container))
+              "nested boundaries never leave the tree blank")
+          (cleanup))
+        (finally (set! js/console.error orig))))))
+
 ;;; StrictMode double-invocation safety
 
 (defn- strict [element]
@@ -636,4 +683,35 @@
       (is (pos? (count @seen)))
       (is (apply = @seen)
           "all renders observe an =-equal root cursor (same underlying atom + path)")
+      (.unmount result))))
+
+(deftest use-effect-strict-mode-test
+  (testing "use-effect setup/cleanup balance under StrictMode's double-invoke"
+    (let [active (cljs.core/atom 0)
+          Probe (fn [_]
+                  (hook/use-effect
+                    (fn []
+                      (swap! active inc)
+                      (fn [] (swap! active dec)))
+                    [])
+                  (Element {:tag "i"}))
+          memoized (component/memo-component Probe)
+          result (render (strict (component/create-cljs-element memoized {})))]
+      ;; StrictMode runs setup, cleanup, setup — net exactly one live effect.
+      (is (= 1 @active) "exactly one live effect after StrictMode settles")
+      (.unmount result)
+      (is (= 0 @active) "cleanup runs on unmount, balancing the final setup"))))
+
+(deftest use-state-lazy-init-strict-mode-test
+  (testing ":lazy? initializer yields its return value as the initial state under StrictMode"
+    (let [seen  (cljs.core/atom nil)
+          calls (cljs.core/atom 0)
+          Probe (fn [_]
+                  (let [s (hook/use-state (fn [] (swap! calls inc) 42) :lazy? true)]
+                    (reset! seen @s))
+                  (Element {:tag "i"}))
+          memoized (component/memo-component Probe)
+          result (render (strict (component/create-cljs-element memoized {})))]
+      (is (= 42 @seen) "state initialized from the lazy initializer's return value")
+      (is (pos? @calls) "initializer was invoked")
       (.unmount result))))

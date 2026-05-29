@@ -52,15 +52,17 @@
   "Convert one prop value. Maps recurse through props->js; sequentials become
   JS arrays with each element converted via convert-value (so arrays-of-maps
   arrive as arrays-of-JS-objects, matching consumer expectations).
-  Fast-paths PersistentArrayMap / PersistentVector ahead of the generic
-  map?/sequential? branches to skip protocol dispatch on the common case."
+  Fast-paths PersistentArrayMap / PersistentVector / PersistentHashMap ahead of
+  the generic map?/sequential? branches to skip protocol dispatch on the common
+  case (mirrors the fast-path set in walk-seq)."
   [v]
   (cond
     (instance? PersistentArrayMap v) (props->js v)
     (instance? PersistentVector  v)  (walk-seq v)
-    (map?         v)                  (props->js v)
-    (sequential?  v)                  (walk-seq v)
-    :else                              v))
+    (instance? PersistentHashMap v)  (props->js v)
+    (map?         v)                 (props->js v)
+    (sequential?  v)                 (walk-seq v)
+    :else                            v))
 
 (defn- convert-prop
   "Convert one (key, value) pair to its JS prop value. A :ref whose value

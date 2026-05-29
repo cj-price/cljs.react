@@ -11,7 +11,7 @@
    ["react" :as react]
    ["@testing-library/react" :refer [renderHook render act cleanup]]))
 
-(def ^:private num-tests 50)
+(def ^:private num-tests 100)
 
 (defn- normalize
   "Normalize CLJS value for comparison after JS roundtrip.

@@ -142,14 +142,17 @@
                      #(.. % -target -value))
         form-atom (.-form-atom handle)
         opts-ref  (.-opts-ref handle)
+        ;; onChange marks the field :dirty but NOT :touched — touched tracks
+        ;; user interaction in the "has been blurred or submitted" sense (see
+        ;; the form-atom contract), which is what gates error visibility. A
+        ;; field the user is still typing into should not flash its error.
         on-change (fn [^js e]
                     (let [val (extract-fn e)]
                       (swap! form-atom
                              (fn [s]
                                (assoc s
-                                      :values  (assoc (:values s) field-key val)
-                                      :dirty   (conj (:dirty s) field-key)
-                                      :touched (conj (:touched s) field-key))))))
+                                      :values (assoc (:values s) field-key val)
+                                      :dirty  (conj (:dirty s) field-key))))))
         on-blur   (fn [_e]
                     (swap! form-atom update :touched conj field-key)
                     (when (= :blur (:validate-on @opts-ref))
@@ -185,7 +188,12 @@
     :on-submit   - fn(values) -> nil or Promise
     :validate-on - nil | :submit | :blur. :submit (the default) validates only
                    when the form is submitted; :blur additionally re-validates
-                   when a field blurs.
+                   when a field blurs. On :blur, the validator runs over all
+                   values but only the blurred field's :errors entry is written
+                   back — other fields keep their existing errors untouched. A
+                   cross-field error (e.g. password-confirmation keyed on a
+                   different field) therefore surfaces when that field blurs or
+                   on submit, not from blurring an unrelated field.
 
   When :values is a plain map, it is captured once on first render — later
   changes to the same map key (e.g. props re-rendering with a new :values)

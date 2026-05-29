@@ -26,6 +26,12 @@
                   (undefined / single / JS array) on this path — the seq
                   normalization applied to default and :forward-ref does not
                   run here.
+                  Memoization caveat: this path uses React's default shallow
+                  (Object.is) prop comparison, NOT the deep CLJS `=` used by the
+                  default/:forward-ref paths. Passing a freshly-built CLJS map
+                  each render defeats the memo (every render produces a new JS
+                  object); pass plain JS props, or stable references, when memo
+                  benefit matters here.
 
     :forward-ref  Wrap with React.forwardRef. The forwarded ref arrives in the
                   CLJS props map under :ref as a RefAtom — deref for the raw

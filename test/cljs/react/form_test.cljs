@@ -3,6 +3,7 @@
    [cljs.test :refer [deftest testing is async]]
    [cljs.react.form :as form]
    ["global-jsdom/register"]
+   ["react" :as react]
    ["@testing-library/react" :refer [renderHook act]]))
 
 ;;; Test helpers — use the public FormHandle accessors (form-atom, form-opts)
@@ -118,6 +119,15 @@
       (act #((:onChange field) (mock-event "Bob")))
       (let [updated (.. result -result -current)]
         (is (true? (:dirty updated))))))
+
+  (testing "onChange marks the field dirty but NOT touched (touched = blurred/submitted)"
+    (let [{:keys [result handle-atom]} (render-field {:values {:name ""}} :name)
+          field (.. result -result -current)]
+      (act #((:onChange field) (mock-event "Bob")))
+      (let [state (form-state @handle-atom)]
+        (is (contains? (:dirty state) :name) "onChange marks dirty")
+        (is (not (contains? (:touched state) :name))
+            "onChange must not mark touched — a field being typed into hasn't been blurred"))))
 
   (testing "changing field-a does not re-render field-b subscription"
     (let [handle-holder (cljs.core/atom nil)
@@ -247,6 +257,23 @@
                                     (is (nil? (form-error @handle-atom :name)))
                                     (.unmount result)
                                     (done))))))))))))
+
+;;; use-form watch lifecycle under StrictMode
+
+(deftest use-form-watchable-strict-mode-test
+  (testing "watchable :values leaves exactly one watch after StrictMode mount, zero after unmount"
+    (let [source  (cljs.core/atom {:name "init"})
+          wrapper (fn [^js props]
+                    (react/createElement react/StrictMode nil (.-children props)))
+          result  (renderHook #(form/use-form {:values source})
+                              #js {:wrapper wrapper})]
+      ;; StrictMode double-invokes effect setup/cleanup; after mount settles
+      ;; there must be exactly one live watch on the source.
+      (is (= 1 (count (.-watches source)))
+          "one live watch after StrictMode settles")
+      (.unmount result)
+      (is (zero? (count (.-watches source)))
+          "watch removed on unmount"))))
 
 ;;; use-form-meta
 

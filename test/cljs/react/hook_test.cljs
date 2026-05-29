@@ -538,7 +538,27 @@
       (is (false? pending))
       (is (fn? start)))))
 
+(deftest use-transition-applies-update-test
+  (testing "start-transition runs its callback and the wrapped state update lands"
+    (let [holder (cljs.core/atom nil)
+          r (renderHook #(let [s     (hook/use-state 0)
+                               [_ start] (hook/use-transition)]
+                           (reset! holder {:state s :start start})
+                           @s))]
+      (is (= 0 (.. r -result -current)))
+      (let [{:keys [state start]} @holder]
+        (act #(start (fn [] (reset! state 5)))))
+      (is (= 5 (.. r -result -current))
+          "state update dispatched inside start-transition is applied"))))
+
 (deftest use-deferred-value-test
   (testing "use-deferred-value returns its argument (no concurrent priority in test)"
     (let [r (renderHook #(hook/use-deferred-value "abc"))]
-      (is (= "abc" (.. r -result -current))))))
+      (is (= "abc" (.. r -result -current)))))
+  (testing "tracks the latest value across rerenders"
+    (let [r (renderHook (fn [^js props] (hook/use-deferred-value (.-v props)))
+                        #js {:initialProps #js {:v "a"}})]
+      (is (= "a" (.. r -result -current)))
+      (act #(.rerender r #js {:v "b"}))
+      (is (= "b" (.. r -result -current))
+          "deferred value catches up to the newest input after rerender"))))

@@ -15,6 +15,11 @@
    :autorun true}
 
   :benchmark
+  ;; Deliberately :simple, not :advanced (which :release-demo uses). :advanced
+  ;; DCE/renaming would prune or rewrite the benchmark harness and make results
+  ;; hard to attribute, and :simple keeps iteration fast. Absolute numbers are
+  ;; not production-representative; benchmarks are for relative HEAD-vs-HEAD~1
+  ;; regression checks on the same machine (see CLAUDE.md).
   {:target :node-script
    :main cljs.benchmark.core/-main
    :output-to "target/benchmark.js"

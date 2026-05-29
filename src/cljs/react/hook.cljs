@@ -222,7 +222,13 @@
   async callback or interval, mirror it into a `use-ref` and deref the ref.
   StateAtoms backed by the same useState slot compare equal under `=` (setter
   identity is stable across renders), so a StateAtom is safe to place into
-  cljs.react use-effect / use-memo / use-callback deps."
+  cljs.react use-effect / use-memo / use-callback deps.
+
+  NOTE: unlike a regular CLJS atom (and unlike RefAtom), `reset!`/`swap!` on a
+  StateAtom do NOT synchronously return the new value — React's setter is
+  asynchronous and batched, so the next value isn't known until the following
+  render. `reset!` returns the value you passed in; `swap!` returns nil. Read
+  the updated value via `@s` on the next render, not from the `swap!` result."
   [initial & {:keys [lazy?]}]
   (StateAtom.
     (cond

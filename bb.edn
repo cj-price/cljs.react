@@ -11,9 +11,19 @@
            (p/shell "pnpm exec shadow-cljs compile test")
            (p/shell "node target/test.js"))}
 
+  test:watch
+  {:doc "Watch and re-run tests on changes (autorun via :test build)"
+   :task (p/shell "pnpm exec shadow-cljs watch test")}
+
   lint
   {:doc "Run clj-kondo over src / test / dev / hook code"
    :task (p/shell "clj-kondo --lint src test dev .clj-kondo/hooks")}
+
+  check
+  {:doc "CI gate: lint then run the full test suite"
+   :task (do
+           (run 'lint)
+           (run 'test))}
 
   bench
   {:doc "Run performance benchmarks"
