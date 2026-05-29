@@ -131,6 +131,11 @@
   RefAtoms compare equal across renders when they wrap the same underlying
   React ref, so they're safe to place into hook deps.
 
+  Unlike a StateAtom (see `use-state`), a RefAtom wraps a plain mutable cell:
+  `reset!`/`swap!` write synchronously and return the new value (the standard
+  IReset/ISwap contract), and `@ref` always reads the latest value — there is
+  no async/batched setter and no per-render snapshot.
+
   Args:
     initial - optional initial value (defaults to nil)
 

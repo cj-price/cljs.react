@@ -295,7 +295,9 @@
                 (use for checkbox inputs)
     :error    — error string, or nil while the field is untouched
     :dirty    — boolean: has the user changed this field since reset?
-    :onChange — DOM change handler (extracts e.target.value / .checked)
+    :onChange — DOM change handler (extracts e.target.value / .checked);
+                marks the field :dirty, not :touched, so an error does not
+                surface while the user is still typing
     :onBlur   — DOM blur handler (marks the field touched)
 
   Both :value and :checked are always present so callers can destructure

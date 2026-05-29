@@ -631,22 +631,33 @@
         (finally (set! js/console.error orig))))))
 
 (deftest error-boundary-nested-propagation-test
-  (testing "an error thrown by the inner boundary's fallback propagates to the outer boundary"
+  (testing "an inner boundary whose fallback throws renders its own sentinel; the outer boundary does NOT trip"
     (let [orig js/console.error]
       (set! js/console.error (fn [& _]))
       (try
         (let [result (render
                        (ErrorBoundary
                          {:fallback (fn [_] (Element {:tag "div" :className "outer-fb"} "outer caught it"))}
-                         (ErrorBoundary
-                           {:fallback (fn [_] (throw (js/Error. "inner fallback also broke")))}
-                           (component/create-cljs-element Throwing {:msg "child boom"}))))
-              container (.-container result)]
-          ;; The inner boundary's throwing fallback first hits the inner boundary's
-          ;; own try/catch (sentinel). It does not crash the tree, so the outer
-          ;; boundary need not trip — assert the UI shows *something* and stays alive.
-          (is (some? (.-firstChild container))
-              "nested boundaries never leave the tree blank")
+                         (Element {:tag "section" :className "outer-content"}
+                           (ErrorBoundary
+                             {:fallback (fn [_] (throw (js/Error. "inner fallback also broke")))}
+                             (component/create-cljs-element Throwing {:msg "child boom"})))))
+              container (.-container result)
+              sentinel  (.querySelector container "pre")]
+          ;; The inner fallback throws, so the inner boundary's own try/catch
+          ;; renders the <pre> sentinel — the error never reaches the outer boundary.
+          (is (some? sentinel) "inner boundary rendered its sentinel")
+          (is (re-find #"ErrorBoundary :fallback threw" (.-textContent sentinel)))
+          (is (re-find #"inner fallback also broke" (.-textContent sentinel))
+              "sentinel surfaces the inner fallback's failure")
+          (is (re-find #"child boom" (.-textContent sentinel))
+              "sentinel surfaces the original child error")
+          ;; The outer boundary stayed alive: its subtree is still mounted and its
+          ;; fallback never rendered — the inner sentinel contained the failure.
+          (is (some? (.querySelector container ".outer-content"))
+              "outer boundary kept its normal subtree mounted")
+          (is (nil? (.querySelector container ".outer-fb"))
+              "outer fallback did not render")
           (cleanup))
         (finally (set! js/console.error orig))))))
 

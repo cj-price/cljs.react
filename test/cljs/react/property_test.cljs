@@ -39,20 +39,21 @@
 ;; Mix small (PAM) and large (PHM) maps so roundtrip + skip-key properties
 ;; exercise both paths through clj->js-props. The PHM branch uses
 ;; (into (hash-map) m) to force PersistentHashMap even if CLJS later raises
-;; the PAM→PHM threshold, and unique integer-suffixed keywords so collisions
-;; can't shrink the map below 9 entries during generator simplification.
-;; Keys are kept keyword-only so the roundtrip property can compare under
-;; js->clj :keywordize-keys true; the non-keyword (str k) fallback path is
-;; covered by unit tests in component_test.cljs.
+;; the PAM→PHM threshold. Keys come from (range) zipped against a 9-16 element
+;; value vector, so they are provably distinct (:k0 :k1 …) and the map can
+;; never shrink below 9 entries — keying off gen/nat instead would collide at
+;; small generator sizes and throw "Couldn't generate enough distinct
+;; elements!". Keys are kept keyword-only so the roundtrip property can compare
+;; under js->clj :keywordize-keys true; the non-keyword (str k) fallback path
+;; is covered by unit tests in component_test.cljs.
 (defn- as-phm [m] (into (hash-map) m))
 
 (def ^:private props-gen
   (gen/one-of
     [(gen/map gen/keyword prop-value-gen {:max-elements 4})
-     (gen/fmap as-phm
-       (gen/map (gen/fmap #(keyword (str "k" %)) gen/nat)
-                prop-value-gen
-                {:min-elements 9 :max-elements 16}))]))
+     (gen/fmap (fn [vals]
+                 (as-phm (zipmap (map #(keyword (str "k" %)) (range)) vals)))
+               (gen/vector prop-value-gen 9 16))]))
 
 (deftest clj->js-props-roundtrip
   (let [result (tc/quick-check num-tests
