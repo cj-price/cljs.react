@@ -39,4 +39,41 @@
   {:doc "Run benchmarks and save as new baseline"
    :task (do
            (p/shell "pnpm exec shadow-cljs compile benchmark")
-           (p/shell "node target/benchmark.js --save-baseline"))}}}
+           (p/shell "node target/benchmark.js --save-baseline"))}
+
+  bench-regression
+  {:doc "Bench the library at <ref> (default HEAD~1) vs the current tree (5 runs/side, best-of) and fail on regression. Never mutates the working tree."
+   :task
+   (let [ref       (or (first *command-line-args*) "HEAD~1")
+         runs      5
+         wt        "target/bench-base-worktree"
+         cwd       (System/getProperty "user.dir")
+         cur-outs  (mapv (fn [i] (str "target/bench-current-" i ".edn")) (range runs))
+         ;; Absolute so the worktree-run base process writes into THIS repo's
+         ;; target/, not the worktree's.
+         base-outs (mapv (fn [i] (str cwd "/target/bench-base-" i ".edn")) (range runs))]
+     ;; 1. Current tree: compile once, run `runs` times (separate processes).
+     (p/shell "pnpm exec shadow-cljs compile benchmark")
+     (run! (fn [out] (p/shell "node" "target/benchmark.js" "--emit" out)) cur-outs)
+     ;; 2. Baseline in a throwaway worktree at <ref>. Overlay the CURRENT
+     ;;    benchmark harness (src/cljs/benchmark + benchmark/) onto the base
+     ;;    ref's LIBRARY (its src/cljs/react), then compile + run inside the
+     ;;    worktree. The harness/bench-set stays constant across both sides, the
+     ;;    worktree has its own .shadow-cljs cache + target/ (no stale build),
+     ;;    and the working tree's source is never touched — a kill mid-run can't
+     ;;    lose uncommitted work.
+     (p/shell {:continue true} "git" "worktree" "remove" "--force" wt)
+     (p/shell "git" "worktree" "add" "--force" "--detach" wt ref)
+     (try
+       (p/shell "bash" "-c"
+                (str "rm -rf " wt "/src/cljs/benchmark && cp -r src/cljs/benchmark " wt "/src/cljs/benchmark"
+                     " && rm -rf " wt "/benchmark && cp -r benchmark " wt "/benchmark"
+                     " && ln -sfn \"" cwd "/node_modules\" " wt "/node_modules"))
+       (p/shell {:dir wt} "pnpm" "exec" "shadow-cljs" "compile" "benchmark")
+       (run! (fn [out] (p/shell {:dir wt} "node" "target/benchmark.js" "--emit" out)) base-outs)
+       (finally
+         (p/shell {:continue true} "git" "worktree" "remove" "--force" wt)))
+     ;; 3. Compare best-of-N per side; a non-zero exit (regression) propagates.
+     (p/shell "bb" "benchmark/regression.clj"
+              (clojure.string/join "," base-outs)
+              (clojure.string/join "," cur-outs)))}}}

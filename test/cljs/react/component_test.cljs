@@ -74,6 +74,17 @@
           js-obj (component/clj->js-props {:ref callback})]
       (is (identical? callback (gobj/get js-obj "ref"))))))
 
+(deftest clj->js-props-self-referential-js-object-passthrough-test
+  (testing "a self-referential plain JS object passes through by identity — clj->js-props
+            does not recurse into pre-built JS objects, so a cycle cannot blow the stack.
+            (Persistent CLJS collections are immutable and cannot self-reference, so the
+            recursive walk has no reachable cycle; this documents the boundary.)"
+    (let [o #js {}]
+      (set! (.-self o) o)
+      (let [out (component/clj->js-props {:obj o})]
+        (is (identical? o (gobj/get out "obj"))
+            "the cyclic JS object is handed through untouched, no infinite recursion")))))
+
 (deftest clj->js-props-namespaced-keyword-test
   (testing "namespaced keywords use their fully-qualified name"
     (let [js-obj (component/clj->js-props {:foo/bar "x" :a.b/c "y"})]

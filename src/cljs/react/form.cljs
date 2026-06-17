@@ -19,6 +19,13 @@
    :submitted?   false
    :submit-error nil})
 
+;; Monotonic submit token. Each run-submit! stamps the form state with a fresh
+;; id; its async completions only write back while that id is still current.
+;; A reset-form! (or any make-state reset) drops :submit-id, so an in-flight
+;; submit that resolves after a reset no-ops instead of clobbering the fresh
+;; state with :submitted? true.
+(defonce ^:private submit-seq (atom 0))
+
 (defn form-atom
   "Return the raw form-state atom for direct inspection/mutation.
 
@@ -341,6 +348,7 @@
   ;; this protects against double-click races where the second call arrives
   ;; before the first has written any state to the atom.
   (let [form-atom     (.-form-atom handle)
+        id            (swap! submit-seq inc)
         [old-s new-s] (swap-vals! form-atom
                         (fn [s]
                           (if (:submitting? s)
@@ -349,35 +357,32 @@
                                 (update :touched into (keys (:values s)))
                                 (assoc :submit-error nil
                                        :submitting?  true
-                                       :errors       {})))))]
+                                       :submitted?   false
+                                       :errors       {}
+                                       :submit-id    id)))))]
     (if (identical? old-s new-s)
       (js/Promise.resolve nil)
       (let [v        (:values new-s)
             validate (:validate @(.-opts-ref handle))
             vresult  (call-validator validate v)
-            _        (when (instance? js/Promise vresult)
-                       (swap! form-atom assoc :validating? true))]
+            ;; Apply f to the state only while this submit is still current.
+            ;; A reset-form! mid-flight drops :submit-id, so a late completion
+            ;; no-ops rather than resurrecting :submitting?/:submitted?.
+            finish!  (fn [f] (swap! form-atom (fn [s] (if (= (:submit-id s) id) (f s) s))))]
+        (when (instance? js/Promise vresult)
+          (finish! #(assoc % :validating? true)))
         (-> (js/Promise.resolve vresult)
             (.then (fn [errs]
-                     (swap! form-atom assoc :validating? false)
+                     (finish! #(assoc % :validating? false))
                      (if (and errs (pos? (count errs)))
-                       (swap! form-atom assoc
-                              :errors      errs
-                              :submitting? false)
+                       (finish! #(assoc % :errors errs :submitting? false))
                        (-> (js/Promise.resolve (when submit-fn (submit-fn v)))
                            (.then (fn [_]
-                                    (swap! form-atom assoc
-                                           :submitting? false
-                                           :submitted?  true)))
+                                    (finish! #(assoc % :submitting? false :submitted? true))))
                            (.catch (fn [err]
-                                     (swap! form-atom assoc
-                                            :submitting?  false
-                                            :submit-error err)))))))
+                                     (finish! #(assoc % :submitting? false :submit-error err))))))))
             (.catch (fn [err]
-                      (swap! form-atom assoc
-                             :validating?  false
-                             :submitting?  false
-                             :submit-error err))))))))
+                      (finish! #(assoc % :validating? false :submitting? false :submit-error err)))))))))
 
 (defn on-submit
   "Returns an onSubmit event handler.

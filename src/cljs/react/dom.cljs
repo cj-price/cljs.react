@@ -36,3 +36,23 @@
   "Render `child` into `container` (a DOM node outside the current tree)."
   [child container]
   (react-dom/createPortal child container))
+
+(defn mount!
+  "Create a root for `container` and render `element` into it in one step,
+  returning the root (hand it to [[unmount]] to tear down). Convenience for the
+  common [[create-root]] + [[render]] pair:
+
+    (defonce root (mount! (js/document.getElementById \"app\") (App {})))"
+  [container element]
+  (let [root (create-root container)]
+    (render root element)
+    root))
+
+(defn flush-sync
+  "Force React to flush any state updates performed inside `thunk` (a 0-arity
+  fn) synchronously, committing their DOM changes before returning. Opts out of
+  React's batching — use sparingly, e.g. when you must read updated layout
+  immediately after a state change. Wraps react-dom/flushSync. Returns `thunk`'s
+  value."
+  [thunk]
+  (react-dom/flushSync thunk))

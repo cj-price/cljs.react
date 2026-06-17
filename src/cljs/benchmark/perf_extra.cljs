@@ -83,9 +83,36 @@
              #(swap! a2 update-in path inc)
              {:iterations 50000}))))
 
+;;; Cursor fan-out: a single root swap! must run every subscribed cursor's
+;;; path-filtered watch. Models N components subscribed via use-atom/use-db to
+;;; distinct paths under one db, then a write to one path.
+
+(defn bench-cursor-fanout []
+  (let [n       20
+        a       (atom (into {} (map (fn [i] [i 0]) (range n))))
+        ;; Same shape, NO watches — so the only difference vs the target is the
+        ;; 20-watch notification dispatch. The reported overhead then isolates
+        ;; the fan-out cost, not the map-update machinery.
+        a2      (atom (into {} (map (fn [i] [i 0]) (range n))))
+        cursors (mapv #(db/->Cursor a [%]) (range n))]
+    ;; One watch per cursor — mirrors N subscribed components. Each fires the
+    ;; cursor's path-diff filter on every root swap!.
+    (doseq [[i c] (map-indexed vector cursors)]
+      (add-watch c (keyword (str "w" i)) (fn [_ _ _ _])))
+    (merge {:id :cursor/fanout-20
+            :category :db-performance
+            :name "Root swap! with 20 path-watching cursors (fan-out)"}
+           (utils/bench-compare
+             ;; Write one path; all 20 path-filters run on the watched atom.
+             #(swap! a update 0 inc)
+             ;; Identical write on an unwatched atom of the same shape.
+             #(swap! a2 update 0 inc)
+             {:iterations 20000}))))
+
 (defn run-all []
   [(bench-element-one-child)
    (bench-element-ten-children)
    (bench-props-with-ref)
    (bench-cursor-swap-shallow)
-   (bench-cursor-swap-deep)])
+   (bench-cursor-swap-deep)
+   (bench-cursor-fanout)])

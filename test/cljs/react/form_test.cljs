@@ -795,3 +795,129 @@
       (.unmount result)
       (is (= before (count (.-watches values-atom)))
           "watch was removed when the hook unmounted"))))
+
+;;; Cross-field (interdependent) validation
+;;; Counterpart to blur-validation-scoped-test: submit runs the validator over
+;;; the whole values map, so a validator whose verdict depends on more than one
+;;; field surfaces its error — unlike :blur, which only writes the blurred
+;;; field's slice (see form.cljs :validate-on contract).
+
+(deftest submit-cross-field-validation-mismatch-test
+  (testing "submit blocks and writes a dependent-field error when fields disagree"
+    (async done
+      (let [submitted (cljs.core/atom false)
+            result    (render-form
+                        {:values    {:password "secret" :confirm "typo"}
+                         :validate  (fn [{:keys [password confirm]}]
+                                      (when (not= password confirm)
+                                        {:confirm "Passwords do not match"}))
+                         :on-submit (fn [_] (reset! submitted true))})
+            handle    (.. result -result -current)
+            submit!   (form/on-submit handle)
+            fake-e    #js {:preventDefault (fn [])}]
+        (-> (submit! fake-e)
+            (.then (fn []
+                     (is (false? @submitted) "cross-field mismatch blocks submit")
+                     (is (= "Passwords do not match" (form-error handle :confirm))
+                         "the dependent field's error is written on submit")
+                     (.unmount result)
+                     (done))))))))
+
+(deftest submit-cross-field-validation-match-test
+  (testing "submit proceeds once the interdependent fields agree"
+    (async done
+      (let [submitted (cljs.core/atom false)
+            result    (render-form
+                        {:values    {:password "secret" :confirm "secret"}
+                         :validate  (fn [{:keys [password confirm]}]
+                                      (when (not= password confirm)
+                                        {:confirm "Passwords do not match"}))
+                         :on-submit (fn [_] (reset! submitted true))})
+            handle    (.. result -result -current)
+            submit!   (form/on-submit handle)
+            fake-e    #js {:preventDefault (fn [])}]
+        (-> (submit! fake-e)
+            (.then (fn []
+                     (is (true? @submitted) "matching fields pass validation")
+                     (is (nil? (form-error handle :confirm)))
+                     (.unmount result)
+                     (done))))))))
+
+(deftest blur-cross-field-scoped-test
+  (testing "on :blur the validator runs over all values but only the blurred field's
+            error slice is written, so a cross-field error keyed on another field
+            surfaces only when THAT field blurs"
+    (async done
+      (let [handle-atom (cljs.core/atom nil)
+            result (renderHook
+                     #(let [f (form/use-form
+                                {:values      {:password "secret" :confirm "typo"}
+                                 :validate    (fn [{:keys [password confirm]}]
+                                                (when (not= password confirm)
+                                                  {:confirm "Passwords do not match"}))
+                                 :validate-on :blur})]
+                        (reset! handle-atom f)
+                        {:pw (form/use-field f :password)
+                         :cf (form/use-field f :confirm)}))]
+        ;; Blur :password — validator returns a :confirm error, but only
+        ;; :password's slice is written, so :confirm's error stays hidden.
+        (-> (js/Promise.resolve (act #((:onBlur (:pw (.. result -result -current))) nil)))
+            (.then flush-microtasks)
+            (.then (fn []
+                     (is (nil? (form-error @handle-atom :confirm))
+                         "cross-field error not written when an unrelated field blurs")
+                     (is (nil? (:error (:cf (.. result -result -current))))
+                         "and use-field :confirm shows no error (untouched)")
+                     ;; Blur :confirm — now its slice is written and it's touched.
+                     (-> (js/Promise.resolve (act #((:onBlur (:cf (.. result -result -current))) nil)))
+                         (.then flush-microtasks)
+                         (.then (fn []
+                                  (is (= "Passwords do not match" (form-error @handle-atom :confirm))
+                                      "blurring the keyed field surfaces its cross-field error")
+                                  (is (= "Passwords do not match"
+                                         (:error (:cf (.. result -result -current)))))
+                                  (.unmount result)
+                                  (done)))))))))))
+
+;;; reset-form! while a submit is in flight
+;;; A reset mid-submit must win: the in-flight submit's late completion must NOT
+;;; resurrect :submitting?/:submitted? on the freshly-reset state. Guarded by the
+;;; submit-id token in run-submit!.
+
+(deftest reset-during-in-flight-submit-test
+  (testing "reset-form! during an in-flight submit wins — the late completion does not clobber it"
+    (async done
+      (let [result  (render-form
+                      {:values    {:name "Alice"}
+                       :on-submit (fn [_]
+                                    (js/Promise.
+                                      (fn [resolve _]
+                                        (js/setTimeout (fn [] (resolve nil)) 30))))})
+            handle  (.. result -result -current)
+            submit! (form/on-submit handle)
+            fake-e  #js {:preventDefault (fn [])}
+            p       (submit! fake-e)]
+        (is (true? (:submitting? (form-state handle)))
+            "submit is in flight before the promise settles")
+        ;; Reset while the submit promise is still pending.
+        (act #(form/reset-form! handle {:name "Carol"}))
+        (-> p
+            (.then (fn []
+                     (let [s (form-state handle)]
+                       (is (false? (:submitting? s))
+                           "form is not stuck :submitting? after reset + settle")
+                       (is (false? (:submitted? s))
+                           "the reset wins: a late success does NOT mark the reset form :submitted?")
+                       (is (= "Carol" (form-value handle :name))
+                           "reset values are applied"))
+                     ;; The form is still usable: a fresh submit after the reset
+                     ;; completes normally (new submit-id, not blocked).
+                     (let [p2 (submit! fake-e)]
+                       (is (true? (:submitting? (form-state handle)))
+                           "a new submit after reset starts cleanly")
+                       (-> p2
+                           (.then (fn []
+                                    (is (true? (:submitted? (form-state handle)))
+                                        "the post-reset submit completes and marks :submitted?")
+                                    (.unmount result)
+                                    (done))))))))))))

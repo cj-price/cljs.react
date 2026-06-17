@@ -45,6 +45,41 @@
           "unmount should detach the tree")
       (.removeChild (.-body js/document) container))))
 
+(deftest mount!-test
+  (testing "mount! creates a root and renders in one step, returning a usable root"
+    (let [container (.createElement js/document "div")
+          _ (.appendChild (.-body js/document) container)
+          root (atom nil)]
+      (act #(reset! root (rdom/mount! container (Element {:tag "p" :id "mounted"} "hi"))))
+      (is (some? @root) "mount! returns a root")
+      (is (some? (.querySelector container "#mounted")))
+      (is (= "hi" (.-textContent container)))
+      (act #(rdom/unmount @root))
+      (is (nil? (.querySelector container "#mounted")) "returned root unmounts")
+      (.removeChild (.-body js/document) container))))
+
+(deftest flush-sync-test
+  (testing "flush-sync runs the thunk, returns its value, and the update is committed on return"
+    ;; Note: a top-level root render already commits synchronously under jsdom,
+    ;; so this can't isolate flushSync's batching-override from a plain call.
+    ;; What it does lock in: the wrapper passes the thunk through and returns the
+    ;; thunk's value (react-dom/flushSync returns its callback's value), and the
+    ;; enclosed update is reflected in the DOM once flush-sync returns.
+    (let [container (.createElement js/document "div")
+          _ (.appendChild (.-body js/document) container)
+          root (rdom/create-root container)]
+      (act #(rdom/render root (Element {:tag "p" :id "x"} "before")))
+      (is (= "before" (.-textContent container)))
+      (let [ret (rdom/flush-sync
+                  (fn []
+                    (rdom/render root (Element {:tag "p" :id "x"} "after"))
+                    :thunk-return))]
+        (is (= :thunk-return ret) "flush-sync returns the thunk's value"))
+      (is (= "after" (.-textContent container))
+          "DOM reflects the update after flush-sync returns")
+      (act #(rdom/unmount root))
+      (.removeChild (.-body js/document) container))))
+
 (deftest hydrate-root-test
   (testing "hydrate-root attaches to pre-rendered markup"
     (let [container (.createElement js/document "div")

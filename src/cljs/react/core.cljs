@@ -205,6 +205,15 @@
   into an expensive list/visualisation."}
   use-deferred-value hook/use-deferred-value)
 
+(defn start-transition
+  "React.startTransition — the standalone counterpart to `use-transition`'s
+  start-transition. Marks the state updates performed inside `thunk` (a 0-arity
+  fn) as a non-urgent transition so React can keep the UI responsive. Reach for
+  this form when you don't need the pending flag; use `use-transition` inside a
+  component when you do."
+  [thunk]
+  (react/startTransition thunk))
+
 ;; React primitives
 (defn create-context
   "Create a React context.

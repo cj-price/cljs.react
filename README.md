@@ -86,6 +86,10 @@ Everything below is re-exported from `cljs.react.core` unless otherwise noted.
 | `use-atom` | Subscribe to a CLJS atom (equal swaps are no-ops) |
 | `use-selector` | Subscribe to an `IWatchable` with custom `diff?`/`select` (advanced) |
 
+`start-transition` (non-hook) is also re-exported from `cljs.react.core` —
+standalone `React.startTransition` for marking updates non-urgent outside a
+component, where the pending flag of `use-transition` isn't needed.
+
 ### Components
 
 | Symbol | Purpose |
@@ -124,6 +128,8 @@ Everything below is re-exported from `cljs.react.core` unless otherwise noted.
 | `hydrate-root` | Wrap `ReactDOM.hydrateRoot(container, element)` — for SSR-rendered markup |
 | `render` | `(.render root element)` |
 | `unmount` | `(.unmount root)` |
+| `mount!` | `create-root` + `render` in one call; returns the root |
+| `flush-sync` | Flush updates made inside a thunk synchronously (`ReactDOM.flushSync`) |
 | `create-portal` | `ReactDOM.createPortal(children, container)` |
 
 For SSR, render server-side with `react-dom/server` (e.g. `renderToString`) and
@@ -179,6 +185,41 @@ on the `:ref` key of props. Pass the `RefAtom` directly through `Element` —
 `use-ref` returns a `RefAtom` — `@input-ref` gives back the current DOM node
 once the input has mounted. At the call site, pass the `RefAtom` directly;
 `forward-ref` accepts either a `RefAtom` or a raw React ref object.
+
+### `:as-element` components (JS-side interop)
+
+`defnc` accepts an `:as-element` flag for components that are mounted by a
+JS-side React tree (a JS library that calls your component with a plain JS
+props object). Instead of the `cljsProps` wrapper, the component is memoized
+with React's default shallow (`Object.is`) comparison on raw JS props:
+
+```clojure
+(defnc Row :as-element
+  [props]
+  (Element {:tag "li"} (.-label props)))   ; props is a raw JS object here
+```
+
+Two caveats versus the default path:
+
+- **Children arrive raw.** They come through in React's tri-shape
+  (`undefined` / single child / JS array), without the seq normalization the
+  default and `:forward-ref` paths apply.
+- **Memo is shallow, not structural.** This path uses `Object.is`, not the deep
+  CLJS `=` used by default. Passing a freshly-built CLJS map each render defeats
+  the memo (every render is a new JS object) — pass plain JS props or stable
+  references when memoization matters here.
+
+Reach for `:as-element` only at a CLJS↔JS boundary; for normal CLJS-to-CLJS
+composition, the default `defnc` is what you want.
+
+### Custom renderers (advanced)
+
+`Element` and `defnc` build elements through the dynamic var
+`cljs.react.component/*create-element*` (default `react/createElement`). To
+target an alternative renderer (e.g. an emotion `jsx`), build bound element
+functions with `make-element-fn` / `make-create-cljs-element-fn`. These live in
+`cljs.react.component`, which is semi-stable implementation detail — pin a
+version if you depend on them.
 
 ### `:key` on function components
 
@@ -244,6 +285,30 @@ a cursor scoped to a path. `=`-stable per path, so safe in deps:
 
 Calling `use-db` outside a `DBProvider` throws `ex-info` with `:type
 :cljs.react.db/no-provider`.
+
+## Re-render model
+
+A quick mental model of what causes a component to re-render:
+
+- **`defnc` components are memoized by default.** A child re-renders when its
+  parent renders *and* its new props are not `=` (deep CLJS structural equality)
+  to the previous props — so passing an `=`-equal map skips the re-render. The
+  `:as-element` path instead uses React's shallow `Object.is` (see above).
+- **`use-state` follows React.** `reset!` / `swap!` schedule a re-render; React
+  bails out via `Object.is`, so replacing state with an identical *reference*
+  is a no-op, but a freshly-built equal map is a new reference and re-renders.
+- **Atom / cursor subscriptions bail on `=`.** `use-atom`, `use-selector`, and
+  `use-db` re-render only when the watched value changes by structural `=`. A
+  `swap!` that produces an `=`-equal value does not re-render consumers. A
+  `Cursor` fires only when the value *at its path* changes — sibling writes are
+  ignored.
+- **Forms subscribe per field.** `use-field` re-renders only when that one
+  field's value / error / dirty / touched slice changes; `use-form-meta` only
+  on meta changes. Typing in one field does not re-render the others.
+
+The wrapper types (`StateAtom`, `RefAtom`, `Cursor`) are all `=`-stable across
+renders for the same underlying slot/path, so they are safe to place directly in
+`use-effect` / `use-memo` / `use-callback` deps.
 
 ## Troubleshooting
 

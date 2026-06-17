@@ -7,6 +7,9 @@
             [cljs.react.demo.advanced :refer [AdvancedTab]]
             [cljs.react.demo.db :refer [DBTab]]
             [cljs.react.demo.forms :refer [FormsTab]]
+            [cljs.react.demo.boundaries :refer [BoundariesTab]]
+            [cljs.react.demo.concurrent :refer [ConcurrentTab]]
+            [cljs.react.demo.interop :refer [InteropTab]]
             [cljs.react.demo.mui :refer [MUITab]]
             [cljs.react.demo.util :refer [Div Span P H1 Button Header
                                           Nav Main Footer A Strong]])
@@ -21,6 +24,9 @@
                   {:id :advanced :title "Advanced" :emoji "🚀"}
                   {:id :db :title "Global State" :emoji "🗄️"}
                   {:id :forms :title "Forms" :emoji "📝"}
+                  {:id :boundaries :title "Boundaries" :emoji "🛡️"}
+                  {:id :concurrent :title "Concurrent" :emoji "⏱️"}
+                  {:id :interop :title "Interop" :emoji "🔌"}
                   {:id :mui :title "MUI" :emoji "🎨"}]]
     (Div
       (Header
@@ -44,9 +50,12 @@
         (when (= @selected :state)    (StateTab))
         (when (= @selected :effects)  (EffectsTab))
         (when (= @selected :advanced) (AdvancedTab))
-        (when (= @selected :db)       (DBTab))
-        (when (= @selected :forms)    (FormsTab))
-        (when (= @selected :mui)      (MUITab)))
+        (when (= @selected :db)         (DBTab))
+        (when (= @selected :forms)      (FormsTab))
+        (when (= @selected :boundaries) (BoundariesTab))
+        (when (= @selected :concurrent) (ConcurrentTab))
+        (when (= @selected :interop)    (InteropTab))
+        (when (= @selected :mui)        (MUITab)))
 
       (Footer
         (Div {:className "container"}

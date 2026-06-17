@@ -288,6 +288,13 @@
        (identical? (gobj/get prev-js-props "children")
                    (gobj/get next-js-props "children"))))
 
+(defn- cljs-props-comparator
+  "Select the React.memo comparator for the cljsProps path: the shallow
+  comparator (identity on children) when `shallow?`, else the default deep
+  structural walk. Shared by `memo-component` and `memo-forward-ref`."
+  [shallow?]
+  (if shallow? cljs-props-shallow-equal? cljs-props-equal?))
+
 (defn- propagate-display-name!
   "Copy displayName from `src` onto `dst` when present. React DevTools reads
   this for the node label; without it wrapped components render as Anonymous."
@@ -321,7 +328,7 @@
   (propagate-display-name!
     component-fn
     (react/memo (fn [js-props] (component-fn (unwrap-cljs-props js-props)))
-                (if shallow? cljs-props-shallow-equal? cljs-props-equal?))))
+                (cljs-props-comparator shallow?))))
 
 (defn memo-component-js
   "Wrap component with React.memo for components that accept raw JS props.
@@ -414,4 +421,4 @@
   (propagate-display-name!
     component-fn
     (react/memo (forward-ref component-fn)
-                (if shallow? cljs-props-shallow-equal? cljs-props-equal?))))
+                (cljs-props-comparator shallow?))))

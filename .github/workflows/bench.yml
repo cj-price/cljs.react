@@ -1,0 +1,55 @@
+name: bench
+
+on:
+  pull_request:
+    branches: [trunk]
+
+# Benchmark regression gate. Runs the CURRENT benchmark harness against the
+# library at the PR head and at the PR's explicit base commit, 5 runs per side,
+# on the same runner. Fails only on a reproducible per-bench regression beyond a
+# CV-aware tolerance — see benchmark/regression.clj. Absolute numbers on shared
+# CI runners are noisy by nature (see CLAUDE.md); best-of-5 + the CV-aware
+# tolerance (15% floor, empirically calibrated to micro-bench noise) keeps this
+# from flaking on ordinary variance while catching architectural slowdowns.
+
+jobs:
+  bench-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the explicit base SHA below always resolves
+          # (robust even for non-mergeable PRs, unlike a HEAD~1 assumption).
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Cache Nix store
+        uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Cache Maven (.m2)
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/deps.edn', '**/shadow-cljs.edn') }}
+          restore-keys: |
+            ${{ runner.os }}-m2-
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install JS deps
+        run: nix-shell --run 'pnpm install --frozen-lockfile'
+
+      - name: Benchmark regression (PR head vs base)
+        # Pass the PR's base commit explicitly rather than relying on HEAD~1 of
+        # the synthesized merge commit.
+        run: nix-shell --run "bb bench-regression ${{ github.event.pull_request.base.sha }}"

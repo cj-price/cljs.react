@@ -145,6 +145,22 @@
           cursor (.. result -result -current)]
       (is (= {} @cursor)))))
 
+(deftest nested-db-provider-precedence-test
+  (testing "use-db reads the nearest DBProvider — an inner provider shadows the outer"
+    (let [outer-atom (atom {:scope "outer"})
+          inner-atom (atom {:scope "inner"})
+          wrapper    (fn [props]
+                       (db/DBProvider {:value outer-atom}
+                         (db/DBProvider {:value inner-atom}
+                           (.-children props))))
+          result     (renderHook #(db/use-db [:scope]) #js {:wrapper wrapper})
+          cursor     (.. result -result -current)]
+      (is (= "inner" @cursor) "the nearest provider's db wins")
+      ;; Writes through the cursor land in the inner atom, leaving outer untouched.
+      (act #(reset! cursor "inner-edited"))
+      (is (= "inner-edited" (:scope @inner-atom)))
+      (is (= "outer" (:scope @outer-atom)) "outer db is unaffected by inner writes"))))
+
 (deftest db-provider-user-owned-atom-test
   (testing "DBProvider with an atom :value uses it directly — external mutations are visible"
     (let [user-atom (atom {:n 1})

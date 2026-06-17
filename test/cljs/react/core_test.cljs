@@ -6,7 +6,7 @@
    [cljs.react.hook :as hook]
    ["react" :as react]
    ["global-jsdom/register"]
-   ["@testing-library/react" :refer [render renderHook cleanup]])
+   ["@testing-library/react" :refer [render renderHook cleanup act]])
   (:require-macros [cljs.react.core :refer [defnc]]))
 
 ;;; Element
@@ -726,3 +726,45 @@
       (is (= 42 @seen) "state initialized from the lazy initializer's return value")
       (is (pos? @calls) "initializer was invoked")
       (.unmount result))))
+
+;;; Callback refs through Element
+;;; clj->js-props passes a callback :ref through unchanged (see
+;;; component_test/clj->js-props-ref-passthrough-test); this locks in the
+;;; end-to-end behavior that React actually invokes that callback with the DOM
+;;; node (and with nil on unmount) when the ref rides through Element.
+
+(deftest element-callback-ref-invoked-test
+  (testing "a callback :ref on an Element is invoked by React with the DOM node, then nil on unmount"
+    (let [captured (cljs.core/atom [])
+          ref-cb   (fn [node] (swap! captured conj node))
+          result   (render (Element {:tag "input" :id "cb-ref" :ref ref-cb}))
+          node     (first (filter some? @captured))]
+      (is (some? node) "callback ref received a node on mount")
+      (is (= "INPUT" (.-tagName node)))
+      (is (= "cb-ref" (.-id node)))
+      (.unmount result)
+      (is (some nil? @captured)
+          "callback ref invoked with nil on unmount")
+      (cleanup))))
+
+;;; start-transition (standalone)
+
+(deftest start-transition-applies-update-test
+  (testing "a React state update made inside start-transition is applied through React"
+    ;; Stronger than 'the thunk ran': drives a real useState update via
+    ;; start-transition and asserts the committed DOM reflects it — proving the
+    ;; wrapper feeds React's update machinery, not just invoking the thunk.
+    (let [Probe    (fn [_]
+                     (let [n (hook/use-state 0)]
+                       (Element {:tag "button"
+                                 :onClick #(core/start-transition (fn [] (swap! n inc)))}
+                         (str "count: " @n))))
+          memoized (component/memo-component Probe)
+          result   (render (component/create-cljs-element memoized {}))
+          btn      (.querySelector (.-container result) "button")]
+      (is (= "count: 0" (.-textContent btn)))
+      (act #(.click btn))
+      (is (= "count: 1"
+             (.-textContent (.querySelector (.-container result) "button")))
+          "state update inside start-transition is committed")
+      (cleanup))))
