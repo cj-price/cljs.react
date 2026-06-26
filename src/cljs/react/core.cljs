@@ -15,6 +15,7 @@
    ["react" :as react]
    [cljs.react.component :as component]
    [cljs.react.hook :as hook]
+   [cljs.react.lazy :as lazy]
    [cljs.react.db :as db]
    [cljs.react.form :as form]
    [cljs.react.error-boundary :as error-boundary]))
@@ -204,6 +205,23 @@
   while the deferred copy catches up. Useful for piping a fast-changing input
   into an expensive list/visualisation."}
   use-deferred-value hook/use-deferred-value)
+(def ^{:doc "Lazily load a component from a shadow-cljs code-split module and return a
+  stable, callable wrapper to render under Suspense.
+
+  `src` is either a `shadow.lazy/loadable` (real on-demand module chunk) or a
+  0-arity fn returning a `js/Promise` of a ClojureScript component. Keep `src` in
+  a module-level `def` so its identity is stable across renders.
+
+  The result is used like any defnc component, but must sit inside a `Suspense`
+  boundary that supplies the loading fallback:
+
+    (def panel (shadow.lazy/loadable my.app.panel/Panel))
+
+    (defnc View []
+      (let [Panel (use-lazy-loadable panel)]
+        (Element {:tag Suspense :fallback (Element {:tag \"div\"} \"Loading…\")}
+          (Panel {:label \"hi\"}))))"}
+  use-lazy-loadable lazy/use-lazy-loadable)
 
 (defn start-transition
   "React.startTransition — the standalone counterpart to `use-transition`'s

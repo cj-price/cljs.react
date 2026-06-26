@@ -85,6 +85,7 @@ Everything below is re-exported from `cljs.react.core` unless otherwise noted.
 | `use-deferred-value` | `React.useDeferredValue` |
 | `use-atom` | Subscribe to a CLJS atom (equal swaps are no-ops) |
 | `use-selector` | Subscribe to an `IWatchable` with custom `diff?`/`select` (advanced) |
+| `use-lazy-loadable` | Lazy-load a shadow-cljs code-split module as a Suspense-ready component |
 
 `start-transition` (non-hook) is also re-exported from `cljs.react.core` —
 standalone `React.startTransition` for marking updates non-urgent outside a
@@ -185,6 +186,50 @@ on the `:ref` key of props. Pass the `RefAtom` directly through `Element` —
 `use-ref` returns a `RefAtom` — `@input-ref` gives back the current DOM node
 once the input has mounted. At the call site, pass the `RefAtom` directly;
 `forward-ref` accepts either a `RefAtom` or a raw React ref object.
+
+### Lazy loading code-split modules (`use-lazy-loadable`)
+
+`use-lazy-loadable` bridges a shadow-cljs code-split module to React Suspense. Define the
+split point with `shadow.lazy/loadable` (referencing a component **without**
+`:require`-ing its namespace — that reference is what tells shadow to emit a
+separate chunk), then hand the loadable to `use-lazy-loadable`. It returns a stable,
+callable component you render inside a `Suspense` boundary:
+
+```clojure
+(ns my.app.view
+  (:require [shadow.lazy :as lazy]
+            [cljs.react.core :refer [Element Suspense use-lazy-loadable]])
+  (:require-macros [cljs.react.core :refer [defnc]]))
+
+;; Module-level def so the loadable's identity stays stable across renders.
+(def panel (lazy/loadable my.app.panel/Panel))
+
+(defnc View []
+  (let [Panel (use-lazy-loadable panel)]
+    (Element {:tag Suspense :fallback (Element {:tag "div"} "Loading…")}
+      (Panel {:label "hi"}))))
+```
+
+The fallback shows while the chunk is fetched; once resolved, the component
+renders and receives its props/children exactly like an eager `defnc` component.
+This requires `:module-loader true` plus a `:modules` entry for the split
+namespace in your shadow-cljs build (see `shadow-cljs.edn` and
+`dev/cljs/react/demo/lazy_panel.cljs` in this repo for a worked example).
+
+`use-lazy-loadable` also accepts a plain `() => Promise<component>` loader fn, so it works
+without the shadow module machinery (and is unit-testable on its own).
+
+Notes:
+
+- **Keep `src` stable** — hold the loadable/loader in a module-level `def`. Passing
+  a fresh value each render (e.g. an inline `(lazy/loadable …)`) rebuilds the lazy
+  component and re-suspends every render; a dev build warns when it detects this.
+- **Retry** — `React.lazy` caches the settled result (success *or* failure). To
+  recover from a failed chunk load, remount the component that calls `use-lazy-loadable`
+  (bump a `:key`); the cached error can't be cleared in place. A rejected load
+  surfaces to the nearest `ErrorBoundary`.
+- **SSR** — lazy content is client-only. Under `hydrate-root` the Suspense fallback
+  renders on the server and the chunk loads on the client.
 
 ### `:as-element` components (JS-side interop)
 

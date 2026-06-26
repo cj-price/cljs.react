@@ -190,10 +190,10 @@
     (array? children) (seq children)
     :else             (cons children nil)))
 
-(defn- unwrap-cljs-props
+(defn unwrap-cljs-props
   "Read the CLJS props map out of the JS wrapper object, merging :children in
   as a CLJS seq (nil when there are none). Shared by memo-component,
-  forward-ref, and memo-forward-ref."
+  forward-ref, memo-forward-ref, and the lazy-loading shim."
   [js-props]
   (let [cljs-props (gobj/get js-props "cljsProps")
         children   (normalize-children (gobj/get js-props "children"))]

@@ -1,7 +1,7 @@
 (ns cljs.react.demo.boundaries
-  (:require ["react" :as react]
+  (:require [shadow.lazy :as lazy]
             [cljs.react.core :refer [Element ErrorBoundary Suspense
-                                     use-state]]
+                                     use-lazy-loadable use-state]]
             [cljs.react.demo.util :refer [CodeAndOutput Div P Span H2
                                           Button Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))
@@ -45,45 +45,32 @@
       (P {:className "text-xs text-gray-500 italic"}
         "The fallback receives the thrown error; 'Reset boundary' remounts a clean boundary via a keyed wrapper."))))
 
-;;;; Suspense — show a fallback while a lazily-loaded component resolves
+;;;; Suspense — show a fallback while a real code-split module resolves
 
-(defnc LoadedPanel
-  [_]
-  (Div {:className "p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-700 text-sm"}
-    "✅ Module resolved after a simulated 1.2s dynamic import."))
-
-(defn- make-lazy-panel
-  "Build a fresh React.lazy component whose import resolves after 1.2s, so each
-  load re-suspends and the fallback is visible."
-  []
-  (react/lazy
-    (fn []
-      (js/Promise.
-        (fn [resolve _reject]
-          (js/setTimeout
-            (fn [] (resolve #js {:default LoadedPanel}))
-            1200))))))
+;; `cljs.react.demo.lazy-panel` is NOT in this ns's :require list — referencing
+;; its Panel through `loadable` is what tells shadow-cljs to split it into its
+;; own `lazy-panel.js` chunk, fetched on demand by the loader.
+#_{:clj-kondo/ignore [:unresolved-namespace]}
+(def panel-loadable (lazy/loadable cljs.react.demo.lazy-panel/Panel))
 
 (defnc SuspenseDemo
   []
-  ;; Hold the lazy component in state so each "Load" click creates a fresh one
-  ;; (React.lazy caches resolved modules, so a brand-new lazy is what re-shows
-  ;; the fallback).
-  (let [lazy-comp (use-state nil)]
+  (let [show? (use-state false)
+        Panel (use-lazy-loadable panel-loadable)]
     (Div {:className "w-full space-y-3"}
       (Button {:className "px-4 py-2 bg-koi-orange text-white rounded-lg font-medium text-sm shadow hover:bg-orange-600 transition-colors"
-               :onClick #(reset! lazy-comp (make-lazy-panel))}
-        (if @lazy-comp "Reload module" "Load module"))
-      (when @lazy-comp
+               :onClick #(reset! show? true)}
+        "Load module")
+      (when @show?
         (Element {:tag Suspense
                   :fallback (Div {:role "status"
                                   :className "flex items-center gap-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500"}
                               (Span {:aria-hidden true
                                      :className "inline-block w-3 h-3 rounded-full border-2 border-koi-orange border-t-transparent animate-spin"})
                               "Loading module…")}
-          (Element {:tag @lazy-comp})))
+          (Panel {:label "✅ Real chunk fetched on demand via shadow.loader."})))
       (P {:className "text-xs text-gray-500 italic"}
-        "Suspense renders the fallback while the lazy component's import promise is pending."))))
+        "First click fetches lazy-panel.js while Suspense shows the fallback; the chunk is then cached."))))
 
 (defnc BoundariesTab
   []
@@ -96,6 +83,6 @@
      (ErrorBoundaryDemo))
 
     (CodeAndOutput
-     {:title "Suspense — fallback while lazy loads"
-      :code "(def LazyPanel\n  (react/lazy\n    (fn []\n      (js/Promise.\n        (fn [resolve _]\n          (js/setTimeout\n            #(resolve #js {:default Panel})\n            1200))))))\n\n(Element {:tag Suspense\n          :fallback (Div \"Loading…\")}\n  (Element {:tag LazyPanel}))"}
+     {:title "Suspense — fallback while a code-split module loads"
+      :code "(def panel\n  (lazy/loadable my.app.panel/Panel))\n\n(defnc View []\n  (let [Panel (use-lazy-loadable panel)]\n    (Element {:tag Suspense\n              :fallback (Div \"Loading…\")}\n      (Panel {:label \"hi\"}))))\n\n;; `panel` is referenced via loadable (not :require),\n;; so shadow splits it into its own chunk, fetched\n;; on demand. use-lazy-loadable returns a callable component."}
      (SuspenseDemo))))

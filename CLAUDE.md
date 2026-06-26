@@ -18,6 +18,7 @@ src/cljs/react/         # Library source
   form.cljs             # Form state, per-field subscriptions, validation
   db.cljs               # Global state via Cursor + Context
   dom.cljs              # create-root, render, hydrate-root, unmount, create-portal
+  lazy.cljs             # use-lazy-loadable — shadow.lazy code-split modules → React Suspense
   error_boundary.cljs   # ErrorBoundary (class component via Reflect.construct)
 
 dev/cljs/react/demo/    # Demo app
@@ -26,7 +27,7 @@ dev/cljs/react/demo/    # Demo app
 
 test/cljs/react/        # Tests (cljs.test + React Testing Library)
   component_test.cljs / core_test.cljs / db_test.cljs / dom_test.cljs
-  form_test.cljs / hook_test.cljs / property_test.cljs
+  form_test.cljs / hook_test.cljs / lazy_test.cljs / property_test.cljs
 
 public/index.html       # Demo entry point (port 9011)
 shadow-cljs.edn         # Build targets: :demo :test :benchmark :release-demo
@@ -71,8 +72,14 @@ nix-shell --run 'bb bench-baseline'  # Save baseline
 ;; Forms
 (use-form {:values {...} :validate f :on-submit f :validate-on :blur})  ; FormHandle
 
+;; Lazy modules — code-split chunk loaded on demand, rendered under Suspense
+(def panel (shadow.lazy/loadable my.app.panel/Panel))  ; loadable = split point
+(let [Panel (use-lazy-loadable panel)]                           ; stable callable component
+  (Element {:tag Suspense :fallback (Element {:tag "div"} "Loading…")}
+    (Panel {:label "hi"})))
+
 ;; Hooks
-use-effect   use-memo   use-callback   use-ref   use-atom
+use-effect   use-memo   use-callback   use-ref   use-atom   use-lazy-loadable
 ```
 
 ## Architecture Notes
@@ -82,6 +89,9 @@ use-effect   use-memo   use-callback   use-ref   use-atom
 - `defnc` compiles to a React function component; use `memo-component` for memoization
 - Forms use per-field subscriptions — only affected fields re-render on change
 - `*create-element*` dynamic var allows custom renderer injection
+- `use-lazy-loadable` (in `lazy.cljs`) bridges a `shadow.lazy/loadable` (or a 0-arg
+  `() => Promise` loader) to `React.lazy` + Suspense; needs `:module-loader true`
+  + a `:modules` split entry in the build. Only namespace touching `shadow.loader`.
 
 ## Naming Conventions
 

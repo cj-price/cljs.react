@@ -5,7 +5,10 @@
   {:target :browser
    :output-dir "public/js"
    :asset-path "/js"
-   :modules {:main {:init-fn cljs.react.demo/init}}
+   :module-loader true
+   :modules {:main {:init-fn cljs.react.demo/init}
+             :lazy-panel {:entries [cljs.react.demo.lazy-panel]
+                          :depends-on #{:main}}}
    :devtools {:http-root "public"
               :http-port 9011}}
 
@@ -30,6 +33,9 @@
   {:target :browser
    :output-dir "target/release-demo/js"
    :asset-path "js"
-   :modules {:main {:init-fn cljs.react.demo/init}}
+   :module-loader true
+   :modules {:main {:init-fn cljs.react.demo/init}
+             :lazy-panel {:entries [cljs.react.demo.lazy-panel]
+                          :depends-on #{:main}}}
    :compiler-options {:optimizations :advanced
                       :infer-externs :auto}}}}
