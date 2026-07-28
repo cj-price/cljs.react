@@ -137,6 +137,41 @@ For SSR, render server-side with `react-dom/server` (e.g. `renderToString`) and
 on the client call `hydrate-root` on the same container; the initial CLJS
 element tree must match the server-rendered markup.
 
+### Styling (cljs.react.sx)
+
+**Not re-exported** — require `cljs.react.sx` directly. It is opt-in: nothing in
+`cljs.react.core` pulls it in, so you pay nothing if you don't use it. It adds
+no dependencies, Clojure or npm.
+
+| Symbol | Purpose |
+| --- | --- |
+| `use-sx` | Compile an sx map (or `defstyle` var, or vector of them) to a class name |
+| `defstyle` | Define a stable style identity — macro, `(:require-macros [cljs.react.sx :refer [defstyle]])` |
+| `use-theme` | The merged theme map, for values rather than vars |
+| `use-theme-class` | Scope class from the nearest nested `ThemeProvider`, or nil |
+| `theme-var` | `"var(--cx-…)"` string for a theme path, for hand-written CSS |
+| `style` | Compile to a class outside React |
+| `ThemeProvider` | Install a theme — `:root` vars at the root, a scoped class when nested |
+| `BaselineProvider` | Minimal global reset (see the warning under Conventions) |
+
+```clojure
+(ns app.card
+  (:require [cljs.react.core :refer [Element]]
+            [cljs.react.sx :refer [use-sx ThemeProvider]])
+  (:require-macros [cljs.react.core :refer [defnc]]
+                   [cljs.react.sx :refer [defstyle]]))
+
+(defstyle card {:p 2 :border-radius :shape.border-radius
+                :bgcolor :palette.background.paper
+                :&:hover {:box-shadow 2}})
+
+(defnc Card [{:keys [selected? children]}]
+  (Element {:tag "div"
+            :className (use-sx [card (when selected?
+                                       {:bgcolor :palette.primary.main})])}
+    children))
+```
+
 ## Conventions
 
 - **CamelCase** — React element/component constructors: `Element`, `Fragment`,
@@ -161,6 +196,137 @@ so screen readers announce the error when it appears:
                  "Something went wrong: " (ex-message err)))}
   (RiskyChild))
 ```
+
+### The sx dialect
+
+`use-sx` takes a map of CSS declarations and returns a class name. There is
+deliberately **no `:sx` prop on `Element`** — `:sx` already means "pass this
+through to MUI" (see Troubleshooting), so styling is an explicit hook call.
+
+Value types partition with no heuristics:
+
+| You write | You get |
+| --- | --- |
+| dotted keyword `:palette.primary.main` | theme token → `var(--cx-palette-primary-main)` |
+| dotless keyword `:flex`, `:absolute` | literal CSS identifier, kebab-cased |
+| string `"1px solid red"` | literal value, verbatim (except `:content`, which is quoted unless it is already a complete CSS string, a CSS-wide keyword or a function call) |
+| number | theme scale or `px`, decided by the property |
+| map under a `&`/`@` key | nested selector / at-rule |
+| map under a property key | responsive breakpoints |
+
+Numbers mean different things per property class: `:p 2` multiplies the theme
+spacing unit, `:border-radius 1` the shape scale, `:box-shadow 2` indexes the
+elevation list, unitless properties (`:font-weight`, `:opacity`, `:z-index`,
+`:line-height`) stay raw, and everything else gets `px`. `0` is bare `0`
+everywhere except `:box-shadow`, where it is elevation 0 (`none`) — a bare
+`box-shadow: 0` is invalid CSS. Strings bypass the scale entirely
+(`:p "1.5rem"`).
+
+Values are a **trust boundary**. A value that could escape its own declaration
+— `;`, `{`, `}`, `<`, a CSS comment, an unbalanced quote — is rejected with
+`ex-info`, not escaped: a `;` payload still parses as one valid rule, so
+`insertRule` would accept it in production. The same goes for selector keys
+(no top-level `,`), at-rule keys (`@media`, `@supports`, `@container`,
+`@layer` only) and property names. Theme values are checked the same way, more
+strictly — the `:root` block is written as text with nothing downstream to
+re-parse it.
+
+A value must be nil, a keyword, a number or a string. `{:width [1 2]}` and
+`{:display true}` throw rather than emitting `width:[1 2]` — which a parser
+discards silently.
+
+Keys accept camelCase, kebab-case or strings — `:backgroundColor`,
+`:background-color` and `"background-color"` are the same property. Nested
+selectors need an explicit `&`; **string keys are the primary spelling**
+(`"&:hover"`, `"& .child"`) since keywords with interior colons lean on
+reader behaviour that is tolerated rather than specified. A bare selector key
+like `:.child` is rejected with `ex-info` `::invalid-nested-key` rather than
+implicitly prefixed — that rejection is what keeps responsive maps unambiguous.
+
+Responsive values use the object form only: `{:width {:xs "100%" :md 300}}`.
+`:xs` is the base rule; the rest emit mobile-first `min-width` blocks.
+Breakpoints are the one part of the theme baked into rule text, because media
+query parameters cannot reference custom properties — which is why breakpoints,
+and only breakpoints, form part of the style cache key.
+
+Vectors compose: `(use-sx [card (when active? active) {:mt 2}])` drops nils and
+**deep-merges right-wins into one class**. It does not concatenate class names —
+every generated rule is anchored on a single generated class, so two sx classes
+on one element resolve by stylesheet insertion order (registration order, not
+authoring order) and `[a b]` would render identically to `[b a]`.
+
+Function-valued sx (`(fn [theme] …)`) is deliberately unsupported: it would make
+generated CSS depend on arbitrary theme values and collapse the cache to
+per-theme. Theme tokens are the supported escape hatch.
+
+The style registry is **append-only** — a class is never removed, because
+components that did not re-render still reference it. Content-hash dedupe bounds
+growth to *distinct* inputs, so toggling among a fixed set of styles adds
+nothing; a *continuously varying* value is the hazard. Put the varying part in a
+custom property instead of in the sx map:
+
+```clojure
+(Element {:tag "div"
+          :className (use-sx {:width "var(--w)"})
+          :style {"--w" (str w "px")}})   ;; one class, not one per pixel
+```
+
+The library dev-warns once past a few thousand interned classes.
+
+### Theming, and why a theme swap regenerates no CSS
+
+Theme values reach CSS only as custom properties, never inlined. Swapping a
+theme rewrites the `:root { --cx-…: … }` block and nothing else: not one style
+rule is regenerated and every component keeps the class it already had.
+Components that read the theme *do* re-render — `use-sx` calls `use-theme`, so
+every styled component is a context subscriber by construction and context
+propagation bypasses memo bailouts — but that render is a memo hit returning the
+same class and mutating no DOM.
+
+`ThemeProvider` at the root renders **no DOM node**. Nested, it registers a
+scoped `.cx-theme-…` rule and wraps children in a `display: contents` element.
+That rule redefines custom properties **only**: the wrapper generates no box and
+cannot paint a background (its inline `display: contents` also beats the
+documented `:className`), so a dark dialog sets its own surface on an element
+*inside* the scope —
+`(use-sx {:bgcolor :palette.background.default :color :palette.text.primary})`.
+Note `display: contents` breaks flex/grid item relationships and
+percentage-height chains, and can strip a semantic tag's structure from the
+accessibility tree; `:as :none` is the escape hatch, and then placing
+`(use-theme-class)` yourself is mandatory — without it the scoped theme has no
+effect at all.
+
+`:palette.mode` only drives `color-scheme` (see `BaselineProvider`). It carries
+no colours, and the default theme has no dark variant, so `{:palette {:mode
+:dark}}` on its own leaves dark text on a now-dark UA canvas; ship
+`:palette.background` and `:palette.text` alongside it. The library dev-warns
+when it sees that combination.
+
+Mount **exactly one root provider**. Two would share the single `:root` node and
+overwrite each other; the library dev-warns when it happens, and `:scoped? true`
+forces any extra provider onto the scoped path. A nested provider does register
+one scoped rule per distinct theme it inherits, since its variables are baked
+into a class rather than referenced — that rule carries the *entire* merged
+theme (~2 KB) and, like every generated rule, is permanent.
+
+**With no provider mounted, `use-theme` returns `default-theme` — it does not
+throw.** This is deliberately unlike `use-db`'s `::no-provider`: there is a
+sensible default theme, and opting in to sx should not secretly mean
+restructuring your root.
+
+Theme maps use kebab-case keys. A camelCase override is normalized onto the same
+slot, so `{:shape {:borderRadius 8}}` and `{:shape {:border-radius 8}}` are
+interchangeable and cannot produce two colliding custom properties.
+
+### `BaselineProvider` is global CSS
+
+`BaselineProvider` writes an element-level reset (`a`, `img`, `button`,
+`input`…) into a `<style>` node that always precedes generated class rules. Its
+selectors are global and the stylesheet is append-only with no unmount cleanup,
+so **mounting it anywhere styles the whole document for the rest of the
+session**. Mount it once at your app root, or not at all — there is no scoped
+baseline. `:body?` (theme-driven `body` styling) and `:enable-color-scheme?` are
+both opt-in.
 
 ### `forward-ref` and `use-ref`
 
@@ -331,6 +497,29 @@ a cursor scoped to a path. `=`-stable per path, so safe in deps:
 Calling `use-db` outside a `DBProvider` throws `ex-info` with `:type
 :cljs.react.db/no-provider`.
 
+### `StaticStyle` — returned by `defstyle`
+
+`(defstyle card {...})` defines one `StaticStyle` per evaluation. Unlike
+`StateAtom` / `RefAtom` / `Cursor`, which key equality on a shared underlying
+object, the var itself *is* the identity: two `defstyle`s with identical maps
+are not `=`.
+
+```clojure
+(defstyle card {:p 2})
+@card                                    ;; {:p 2} — derefs to its sx map
+(use-sx card)                            ;; "cx-1a2b3c"
+```
+
+That identity is the point. `use-sx`'s deps compare by `identical?` on the var
+instead of walking the map every render, and repeated mounts skip the cache
+probe entirely. The sx map is compiled once, lazily, on first use and memoized
+per breakpoint key.
+
+`defstyle` expands to `def`, not `defonce`, deliberately: editing a style and
+saving re-evaluates it, yielding a fresh identity so components recompile and
+re-render against the new class. `defonce` would make style edits invisible on
+hot reload.
+
 ## Re-render model
 
 A quick mental model of what causes a component to re-render:
@@ -364,6 +553,25 @@ serializing props. Write `:style {:color "red"}`, `:sx {:maxWidth 360}`, even
 `:dangerouslySetInnerHTML {:__html "..."}` — all idiomatic CLJS maps. `#js`
 is only needed when you're calling `react/createElement` directly (raw JS
 interop).
+
+Note `:sx` there is **MUI's** prop, passed straight through to a MUI component;
+it is unrelated to this library's styling layer. cljs.react's own styling is the
+`use-sx` hook, which returns a class name you put on `:className`.
+
+### My sx styles lose to (or beat) my own CSS
+
+The sx stylesheet is appended to `<head>`, and every generated rule is anchored
+on a single generated class (a nested selector splices around it, so
+`{"&:hover" {…}}` is (0,2,0), but the anchor is still one class). So sx wins
+over most author CSS by virtue of coming later — usually what you want, but it
+is documented behaviour rather than an accident, and it cuts both ways: a
+stylesheet injected at runtime *after* sx (a CDN script, say) wins over sx at
+equal specificity. Two sx classes on one element resolve by stylesheet insertion
+order — registration order, not authoring order — so don't put a utility class
+and a `use-sx` class on the same element and expect a predictable winner.
+
+If author CSS must win, raise its specificity; sx deliberately ships no
+specificity knob.
 
 ### `defnc` vs `Element` — which one calls a component?
 
@@ -409,6 +617,11 @@ nix-shell --run 'bb bench'  # run performance benchmarks
 
 Test suite uses `cljs.test` + `@testing-library/react` + `global-jsdom`; the
 `:test` build runs under Node.
+
+`defstyle` lives in `src/cljs/react/sx.clj`, a macro namespace (`sx/sheet.cljs`
+is an ordinary runtime namespace). Editing a macro does not re-expand
+already-compiled call sites — touch the calling file or restart the watch. No
+code implication; it just shouldn't get debugged twice.
 
 The `:release-demo` shadow-cljs build target compiles the demo under
 `:optimizations :advanced` as a smoke test for externs / dead-code issues:

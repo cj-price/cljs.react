@@ -11,6 +11,7 @@
             [cljs.react.demo.concurrent :refer [ConcurrentTab]]
             [cljs.react.demo.interop :refer [InteropTab]]
             [cljs.react.demo.mui :refer [MUITab]]
+            [cljs.react.demo.sx :refer [SXTab]]
             [cljs.react.demo.util :refer [Div Span P H1 Button Header
                                           Nav Main Footer A Strong]])
   (:require-macros [cljs.react.core :refer [defnc]]))
@@ -27,7 +28,8 @@
                   {:id :boundaries :title "Boundaries" :emoji "🛡️"}
                   {:id :concurrent :title "Concurrent" :emoji "⏱️"}
                   {:id :interop :title "Interop" :emoji "🔌"}
-                  {:id :mui :title "MUI" :emoji "🎨"}]]
+                  {:id :mui :title "MUI" :emoji "🎨"}
+                  {:id :sx :title "Styling" :emoji "💅"}]]
     (Div
       (Header
         (Div {:className "container"}
@@ -55,7 +57,8 @@
         (when (= @selected :boundaries) (BoundariesTab))
         (when (= @selected :concurrent) (ConcurrentTab))
         (when (= @selected :interop)    (InteropTab))
-        (when (= @selected :mui)        (MUITab)))
+        (when (= @selected :mui)        (MUITab))
+        (when (= @selected :sx)         (SXTab)))
 
       (Footer
         (Div {:className "container"}

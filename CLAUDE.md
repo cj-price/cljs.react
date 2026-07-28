@@ -20,6 +20,10 @@ src/cljs/react/         # Library source
   dom.cljs              # create-root, render, hydrate-root, unmount, create-portal
   lazy.cljs             # use-lazy-loadable — shadow.lazy code-split modules → React Suspense
   error_boundary.cljs   # ErrorBoundary (class component via Reflect.construct)
+  sx.cljs / sx.clj      # PUBLIC styling API (opt-in); defstyle macro in sx.clj
+  sx/theme.cljs         # default-theme, deep-merge-theme, theme->css-vars, bp-key
+  sx/compile.cljs       # sx->rules + CSS emission — no deps, no DOM
+  sx/sheet.cljs         # registry, hashing, <style> nodes — ONLY ns touching the DOM
 
 dev/cljs/react/demo/    # Demo app
   basics.cljs / state.cljs / effects.cljs / advanced.cljs
@@ -80,6 +84,12 @@ nix-shell --run 'bb bench-baseline'  # Save baseline
 
 ;; Hooks
 use-effect   use-memo   use-callback   use-ref   use-atom   use-lazy-loadable
+
+;; Styling — opt-in, requires cljs.react.sx (NOT re-exported from core)
+(use-sx {:p 2 :color :palette.primary.main :&:hover {:box-shadow 2}})  ; → class
+(defstyle card {:p 2})   ; stable identity; (use-sx card)
+(use-sx [card (when active? {:bgcolor :palette.primary.main})])        ; deep-merged
+(ThemeProvider {:theme {...}} children)   ; root: no DOM; nested: scoped class
 ```
 
 ## Architecture Notes
@@ -92,6 +102,14 @@ use-effect   use-memo   use-callback   use-ref   use-atom   use-lazy-loadable
 - `use-lazy-loadable` (in `lazy.cljs`) bridges a `shadow.lazy/loadable` (or a 0-arg
   `() => Promise` loader) to `React.lazy` + Suspense; needs `:module-loader true`
   + a `:modules` split entry in the build. Only namespace touching `shadow.loader`.
+- `cljs.react.sx` is opt-in and zero-dependency. All DOM/CSSOM interaction is
+  contained in `sx/sheet.cljs`, mirroring the containment `lazy.cljs` keeps over
+  `shadow.loader`. Theme values reach CSS only as `var(--cx-*)`, so the style
+  cache keys on breakpoints (which must be baked into media queries) rather than
+  on the theme — a theme swap rewrites one `:root` block and regenerates nothing.
+  Class rules are append-only and content-hashed; the `:root` theme block is a
+  separate node REPLACED via `useInsertionEffect`, because append-only dedupe
+  makes an A→B→A toggle stick on B.
 
 ## Naming Conventions
 
@@ -117,6 +135,8 @@ Always run `nix-shell --run 'bb bench'` after touching any of:
 - `src/cljs/react/component.cljs` (props conversion, element creation, memo)
 - `src/cljs/react/db.cljs` (Cursor, DB context)
 - `src/cljs/react/hook.cljs` (StateAtom, RefAtom, use-selector cache)
+- `src/cljs/react/sx/sheet.cljs` and `src/cljs/react/sx.cljs` (the registry probe
+  and the `use-sx` deps compare run per render)
 - anything else in the React-render hot path
 
 The saved baseline at `benchmark/baselines.edn` is environmentally fragile —

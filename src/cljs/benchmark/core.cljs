@@ -6,6 +6,7 @@
             [cljs.benchmark.memoization :as memoization]
             [cljs.benchmark.perf-extra :as perf-extra]
             [cljs.benchmark.ssr :as ssr]
+            [cljs.benchmark.sx :as sx]
             [cljs.benchmark.utils :as utils]))
 
 ;; ============================================================================
@@ -66,7 +67,8 @@
                   (component/run-all)
                   (memoization/run-all)
                   (perf-extra/run-all)
-                  (ssr/run-all))]
+                  (ssr/run-all)
+                  (sx/run-all))]
     results))
 
 (defn -main

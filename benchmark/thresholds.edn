@@ -22,4 +22,20 @@
  :memoization/equality-shallow-miss {:max-overhead-pct 200 :max-time-ms 0.005}
  :memoization/equality-deep-hit     {:max-overhead-pct 300 :max-time-ms 0.01}
  :memoization/equality-deep-miss    {:max-overhead-pct 300 :max-time-ms 0.01}
- :memoization/equality-identity     {:max-overhead-pct 100 :max-time-ms 0.002}}
+ :memoization/equality-identity     {:max-overhead-pct 100 :max-time-ms 0.002}
+
+ ;; SX Styling Thresholds
+ ;; :max-overhead-pct is deliberately omitted: the "baseline" for these is a
+ ;; hand-rolled reference point, not an equivalent operation, so a ratio
+ ;; against it carries no signal. Absolute time is the real gate — and it is
+ ;; the stricter one anyway, since an overhead breach only warns while a
+ ;; :max-time-ms breach fails.
+ ;;
+ ;; The warm probes are what a mounted component actually pays; the cold
+ ;; compiles are included for scale, not as a per-render cost.
+ :sx/class-for-warm           {:max-time-ms 0.0005}
+ :sx/static-style-identity    {:max-time-ms 0.0001}
+ :sx/compose-2                {:max-time-ms 0.005}
+ :sx/compile-cold             {:max-time-ms 0.05}
+ :sx/compile-cold-rich        {:max-time-ms 0.2}
+ :sx/theme-vars-flatten       {:max-time-ms 0.5}}

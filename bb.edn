@@ -62,12 +62,34 @@
      ;;    worktree has its own .shadow-cljs cache + target/ (no stale build),
      ;;    and the working tree's source is never touched — a kill mid-run can't
      ;;    lose uncommitted work.
+     ;;
+     ;;    Two additions make the overlay library-ADDITIVE, so benching a ref
+     ;;    that predates a new namespace still works:
+     ;;      - deps.edn is copied, since the current harness may need a dep the
+     ;;        base ref's deps.edn lacks.
+     ;;      - missing library files are backfilled with `cp -rn` (no-clobber),
+     ;;        so files that DO exist at the base ref keep the base
+     ;;        implementation and are measured honestly.
+     ;;    Without these the base side simply fails to compile, and one missing
+     ;;    file destroys the baseline for EVERY bench, not just the new ones.
+     ;;
+     ;;    Known and intentional consequence: a backfilled namespace's benches
+     ;;    exist on both sides, so they compare against themselves at ~1.00x and
+     ;;    report "ok". They never reach regression.clj's "New benches (no
+     ;;    baseline, not gated)" notice, so they LOOK gated while they are not.
+     ;;    That is the right trade (never a false regression), but it is worth
+     ;;    knowing before trusting a new bench's first green run.
+     ;;
+     ;;    shadow-cljs.edn is deliberately NOT copied: build targets and
+     ;;    compiler options should stay the base ref's.
      (p/shell {:continue true} "git" "worktree" "remove" "--force" wt)
      (p/shell "git" "worktree" "add" "--force" "--detach" wt ref)
      (try
        (p/shell "bash" "-c"
                 (str "rm -rf " wt "/src/cljs/benchmark && cp -r src/cljs/benchmark " wt "/src/cljs/benchmark"
                      " && rm -rf " wt "/benchmark && cp -r benchmark " wt "/benchmark"
+                     " && cp deps.edn " wt "/deps.edn"
+                     " && cp -rn src/cljs/react/. " wt "/src/cljs/react/"
                      " && ln -sfn \"" cwd "/node_modules\" " wt "/node_modules"))
        (p/shell {:dir wt} "pnpm" "exec" "shadow-cljs" "compile" "benchmark")
        (run! (fn [out] (p/shell {:dir wt} "node" "target/benchmark.js" "--emit" out)) base-outs)
