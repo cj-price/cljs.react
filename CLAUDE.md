@@ -90,6 +90,12 @@ use-effect   use-memo   use-callback   use-ref   use-atom   use-lazy-loadable
 (defstyle card {:p 2})   ; stable identity; (use-sx card)
 (use-sx [card (when active? {:bgcolor :palette.primary.main})])        ; deep-merged
 (ThemeProvider {:theme {...}} children)   ; root: no DOM; nested: scoped class
+
+;; Animations — content-addressed, pass the OBJECT under :animation-name
+(def spin (keyframes {:from {:transform "rotate(0deg)"}
+                      :to   {:transform "rotate(360deg)"}}))
+(use-sx {:animation-name spin :animation-duration "900ms"   ; <time> needs a unit
+         :animation-iteration-count :infinite})
 ```
 
 ## Architecture Notes
@@ -110,6 +116,12 @@ use-effect   use-memo   use-callback   use-ref   use-atom   use-lazy-loadable
   Class rules are append-only and content-hashed; the `:root` theme block is a
   separate node REPLACED via `useInsertionEffect`, because append-only dedupe
   makes an A→B→A toggle stick on B.
+- `keyframes` is the one thing that escapes "every rule is anchored on one
+  generated class" — a `@keyframes` name is global by CSS design. It is
+  content-addressed like a class, and the object (not its name) travels in the
+  sx map, resolved on the compile-miss path in `sheet.cljs`. A name captured
+  into a map is a snapshot of registry state: it survives `reset-sheet!` and hot
+  reload while its rule does not, and the failure is silent.
 
 ## Naming Conventions
 

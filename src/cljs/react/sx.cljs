@@ -105,6 +105,50 @@
                           (pr-str path) ".")
                      {:type ::invalid-theme-path :got path})))))
 
+(defn keyframes
+  "Define an animation. Returns a value to put under `:animation-name`.
+
+      (def spin (keyframes {:from {:transform \"rotate(0deg)\"}
+                            :to   {:transform \"rotate(360deg)\"}}))
+
+      (use-sx {:animation-name spin
+               :animation-duration \"900ms\"
+               :animation-timing-function :linear
+               :animation-iteration-count :infinite})
+
+  Offsets are `:from`, `:to`, a number 0-100, or a percentage string; a vector
+  key shares one block between offsets (`{[0 100] {:opacity 1}}`). Each frame
+  is an ordinary sx map — shorthands, the spacing scale and theme tokens all
+  work inside one — but declarations only: no nested selectors, at-rules or
+  responsive maps. For a responsive animation, define two and switch
+  `:animation-name` in a breakpoint map.
+
+  Pass the returned value itself, not its name. The name is derived on every
+  compile, which is what keeps it correct across hot reload; a name captured
+  into a map goes stale silently, leaving an element that renders perfectly and
+  never animates. Use [[keyframes-name]] only where a string is unavoidable.
+
+  Prefer the `animation-*` longhands over the `animation` shorthand: sx
+  composition deep-merges per property, so the shorthand resets every
+  sub-property a later part meant to keep. Note also that `:animation-name`
+  alone animates nothing — `animation-duration` defaults to `0s`.
+
+  The frames map is compiled eagerly, so a malformed one throws here rather
+  than at whichever render first touches it. Registration is lazy."
+  [frames]
+  (sheet/keyframes frames))
+
+(defn keyframes-name
+  "Register `kf` if needed and return its generated global name, for the
+  `animation` shorthand, a `:style` prop or interop.
+
+  An escape hatch, and a function rather than a deref because it is effectful.
+  The name it returns is a snapshot: store it in a var or an sx map and it
+  outlives the rule it names across hot reload, silently. `@kf` returns the
+  frames map instead, which is what a deref should do."
+  [kf]
+  (sheet/ensure-keyframes! kf))
+
 ;; ---------------------------------------------------------------------------
 ;; ThemeProvider
 

@@ -147,6 +147,8 @@ no dependencies, Clojure or npm.
 | --- | --- |
 | `use-sx` | Compile an sx map (or `defstyle` var, or vector of them) to a class name |
 | `defstyle` | Define a stable style identity — macro, `(:require-macros [cljs.react.sx :refer [defstyle]])` |
+| `keyframes` | Define an animation; the returned value goes under `:animation-name` |
+| `keyframes-name` | Its generated global name, for the `animation` shorthand or interop |
 | `use-theme` | The merged theme map, for values rather than vars |
 | `use-theme-class` | Scope class from the nearest nested `ThemeProvider`, or nil |
 | `theme-var` | `"var(--cx-…)"` string for a theme path, for hand-written CSS |
@@ -520,6 +522,40 @@ saving re-evaluates it, yielding a fresh identity so components recompile and
 re-render against the new class. `defonce` would make style edits invisible on
 hot reload.
 
+### `Keyframes` — returned by `keyframes`
+
+```clojure
+(def spin (sx/keyframes {:from {:transform "rotate(0deg)"}
+                         :to   {:transform "rotate(360deg)"}}))
+
+@spin                                    ;; the frames map — a deref is a read
+(use-sx {:animation-name spin            ;; the OBJECT, not its name
+         :animation-duration "900ms"
+         :animation-timing-function :linear
+         :animation-iteration-count :infinite})
+```
+
+Offsets are `:from`, `:to`, a number 0–100, or a percentage string; a vector key
+shares one block between offsets (`{[0 100] {:opacity 1}}`). Each frame is an
+ordinary sx map — shorthands, the spacing scale and theme tokens all work — but
+declarations only. For a responsive animation, define two and switch
+`:animation-name` in a breakpoint map.
+
+Like a class, a `Keyframes` is content-addressed: identical frames share one
+`cx-kf-…` rule, and the name is derived on every compile rather than captured.
+That is what keeps it correct across hot reload. `keyframes-name` exists for the
+`animation` shorthand and interop, but the string it returns is a snapshot —
+store it and it outlives the rule it names, leaving an element that renders
+perfectly and never animates. Prefer the `animation-*` longhands anyway: sx
+composition deep-merges per property, so the shorthand resets every sub-property
+a later part meant to keep.
+
+Two footguns the compiler now refuses rather than emitting: `<time>` properties
+(`animation-duration`, `transition-delay`, …) reject bare numbers, since CSS has
+no unitless time even for zero — write `"200ms"`; and empty frames are rejected
+at definition, because `@keyframes x{}` is valid CSS that no downstream check
+would catch.
+
 ## Re-render model
 
 A quick mental model of what causes a component to re-render:
@@ -572,6 +608,14 @@ and a `use-sx` class on the same element and expect a predictable winner.
 
 If author CSS must win, raise its specificity; sx deliberately ships no
 specificity knob.
+
+One exception to "every rule is anchored on a generated class": `keyframes`
+registers a `@keyframes cx-kf-…` rule, whose name is global by CSS design. Its
+*reach* is unchanged — a keyframes rule paints nothing on its own, and a hashed
+name is exactly as global as the hashed class names already are — but a class is
+no longer self-contained. `.cx-abc{animation-name:cx-kf-def}` references CSS
+outside its own rules, so reproducing an element's styling now takes the class
+*and* its keyframes.
 
 ### `defnc` vs `Element` — which one calls a component?
 

@@ -1,43 +1,61 @@
 (ns cljs.react.demo.advanced
-  (:require [clojure.string :as string]
-            [cljs.react.core :refer [use-ref use-state]]
-            [cljs.react.demo.util :refer [CodeAndOutput Div P H2
-                                          Span Strong Button Section]])
-  (:require-macros [cljs.react.core :refer [defnc]]))
+  (:require [cljs.react.core :refer [use-ref use-state]]
+            [cljs.react.sx :refer [use-sx]]
+            [cljs.react.demo.ui :refer [CodeAndOutput Btn Row Stack Grid Panel
+                                        SectionTitle Caption Badge Card]]
+            [cljs.react.demo.util :refer [Div P Span Strong Section]])
+  (:require-macros [cljs.react.core :refer [defnc]]
+                   [cljs.react.sx :refer [defstyle]]))
 
 (defnc NestedComponent
   [{:keys [level message]}]
-  (Div {:className "flex items-start gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg"}
-    (Div {:className "flex items-center justify-center w-8 h-8 rounded-full bg-koi-orange/10 text-koi-orange font-bold text-sm flex-shrink-0"}
+  (Panel {:className (use-sx {:display :flex :align-items :flex-start :gap 1.5})}
+    (Div {:className (use-sx {:display :flex :align-items :center
+                              :justify-content :center :flex-shrink 0
+                              :width "2rem" :height "2rem" :border-radius "50%"
+                              :bgcolor :palette.surface.tint
+                              :color :palette.primary.main
+                              :font-weight 700 :font-size "0.875rem"})}
       level)
     (Div
-      (Div {:className "text-xs uppercase tracking-wide text-gray-500"}
+      (Div {:className (use-sx {:font-size "0.6875rem" :text-transform :uppercase
+                                :letter-spacing "0.06em"
+                                :color :palette.text.secondary})}
         "Level " level)
-      (Div {:className "text-sm text-gray-800 mt-0.5"} message))))
+      (Div {:className (use-sx {:mt 0.25 :font-size "0.875rem"
+                                :color :palette.text.primary})}
+        message))))
 
 (defnc PropsDemo
   []
-  (Div {:className "w-full space-y-2"}
-    (P {:className "text-sm text-gray-600 mb-3"}
-      "Components receive immutable CLJS data structures as props:")
+  (Stack {:gap 1.5}
+    (Caption {} "Components receive immutable CLJS data structures as props:")
     (NestedComponent {:level 1 :message "First nested component"})
     (NestedComponent {:level 2 :message "Second nested component"})
     (NestedComponent {:level 3 :message "Third nested component"})))
 
-(defnc Badge
-  [{:keys [text type]}]
-  (Span {:className (str "badge badge-" (name type))} text))
+(def ^:private role-tone
+  {"admin" :error "moderator" :warning "user" :info})
+
+(defstyle user-card
+  {:transition "border-color 140ms ease, box-shadow 140ms ease"
+   :&:hover {:border-color :palette.primary.main :box-shadow 2}})
 
 (defnc UserCard
   [{:keys [name email role active]}]
-  (Div {:className (str "p-4 bg-white border-2 rounded-lg transition-all hover:border-koi-orange/60 hover:shadow-md "
-                        (if active "border-gray-200" "border-gray-200 opacity-70"))}
-    (Div {:className "flex items-center justify-between gap-2 mb-2"}
-      (Span {:className "font-semibold text-gray-900"} name)
-      (Badge {:text (string/upper-case role) :type role}))
-    (P {:className "text-sm text-gray-600 break-all"} email)
-    (P {:className (str "text-xs mt-2 font-medium "
-                        (if active "text-emerald-600" "text-gray-400"))}
+  (Card {:className (use-sx [user-card (when-not active {:opacity 0.65})])}
+    (Row {:justify :space-between :gap 1}
+      (Span {:className (use-sx {:font-weight 600 :color :palette.text.primary})}
+        name)
+      ;; The role no longer builds a class name at runtime — it selects a tone.
+      (Badge {:tone (role-tone role :neutral)} role))
+    (P {:className (use-sx {:mt 1 :font-size "0.875rem" :overflow-wrap :anywhere
+                            :color :palette.text.secondary})}
+      email)
+    (P {:className (use-sx {:mt 1 :font-size "0.75rem" :font-weight 500
+                            :color (if active
+                                     :palette.success.main
+                                     :palette.text.disabled)})}
       (if active "● Active" "○ Inactive"))))
 
 (defnc CompositionDemo
@@ -45,44 +63,42 @@
   (let [users [{:id 1 :name "Alice Johnson" :email "alice@example.com" :role "admin" :active true}
                {:id 2 :name "Bob Smith" :email "bob@example.com" :role "user" :active true}
                {:id 3 :name "Carol White" :email "carol@example.com" :role "moderator" :active false}]]
-    (Div {:className "w-full grid grid-cols-1 sm:grid-cols-2 gap-3"}
+    (Grid {:min-width "220px" :gap 1.5}
       (for [user users]
-        (Div {:key (:id user)}
-          (UserCard user))))))
+        (UserCard (assoc user :key (:id user)))))))
 
 (defnc RenderCounter
   [{:keys [name]}]
   (let [render-count (use-ref 0)]
     (swap! render-count inc)
-    (Div {:className "flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg"}
-      (Strong {:className "text-sm text-gray-800"} name)
-      (Span {:className "text-xs font-mono px-2 py-0.5 bg-orange-50 text-koi-orange rounded-full border border-orange-100"}
-        "renders: " @render-count))))
+    (Card {:className (use-sx {:display :flex :align-items :center
+                               :justify-content :space-between :gap 1 :p 1.5})}
+      (Strong {:className (use-sx {:font-size "0.875rem"
+                                   :color :palette.text.primary})}
+        name)
+      (Badge {:tone :primary} "renders: " @render-count))))
 
 (defnc MemoizationDemo
   []
   (let [count (use-state 0)
         unrelated (use-state "")]
-    (Div {:className "w-full space-y-3"}
-      (P {:className "text-sm text-gray-600"}
-        "Components are memoized with React.memo using CLJS equality.")
-      (Div {:className "flex flex-wrap gap-2"}
-        (Button {:className "flex-1 min-w-[160px] px-3 py-2 bg-koi-orange text-white rounded-lg font-medium text-sm shadow hover:bg-orange-600 transition-colors"
-                 :onClick #(swap! count inc)}
-          "Increment Count")
-        (Button {:className "flex-1 min-w-[160px] px-3 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium text-sm hover:bg-gray-300 transition-colors"
-                 :onClick #(reset! unrelated (str (random-uuid)))}
-          "Update Unrelated State"))
-      (Div {:className "space-y-2"}
+    (Stack {:gap 1.5}
+      (Caption {} "Components are memoized with React.memo using CLJS equality.")
+      (Row {:gap 1}
+        (Btn {:size :sm :onClick #(swap! count inc)} "Increment count")
+        (Btn {:variant :secondary :size :sm
+              :onClick #(reset! unrelated (str (random-uuid)))}
+          "Update unrelated state"))
+      (Stack {:gap 1}
         (RenderCounter {:name "Parent Component"})
         (RenderCounter {:name (str "Child with count=" @count)}))
-      (P {:className "text-xs text-gray-500 italic"}
-        "Try 'Update Unrelated State' — the child shouldn't re-render."))))
+      (Caption {:className (use-sx {:font-style :italic})}
+        "Try 'Update unrelated state' — the child shouldn't re-render."))))
 
 (defnc AdvancedTab
   []
   (Section
-    (H2 "🚀 Advanced Features")
+    (SectionTitle {} "🚀 Advanced Features")
 
     (CodeAndOutput
      {:title "Props & Data Flow"
@@ -91,7 +107,7 @@
 
     (CodeAndOutput
      {:title "Component Composition"
-      :code "(defnc Badge\n  [{:keys [text type]}]\n  (Span {:className (str \"badge badge-\"\n                          (name type))}\n    text))\n\n(defnc UserCard\n  [{:keys [name role]}]\n  (Div\n    (H4 name)\n    (Badge {:text role :type role})))"}
+      :code ";; A tone selects tokens; nothing builds a class\n;; name at runtime any more.\n\n(defnc UserCard\n  [{:keys [name role active]}]\n  (Card {:className\n          (use-sx [user-card\n                   (when-not active\n                     {:opacity 0.65})])}\n    (Row {:justify :space-between}\n      (Span name)\n      (Badge {:tone (role-tone role)} role))))"}
      (CompositionDemo))
 
     (CodeAndOutput

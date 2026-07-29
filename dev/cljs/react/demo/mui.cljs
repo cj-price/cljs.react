@@ -13,8 +13,18 @@
             ["@mui/material/Typography$default"       :as MuiTypography]
             ["@mui/material/Chip$default"             :as MuiChip]
             [cljs.react.core :refer [Element use-state]]
-            [cljs.react.demo.util :refer [CodeAndOutput H2 P Section]])
+            [cljs.react.demo.ui :refer [CodeAndOutput SectionTitle Muted]]
+            [cljs.react.demo.util :refer [Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))
+
+;; This tab deliberately stays on MUI's OWN styling — its `:variant`, `:color`
+;; and `:sx` props. It is the interop tab; the point is that a JS component
+;; library styles itself and needs nothing from us.
+;;
+;; Note the two `sx`es are unrelated. MUI's is a prop that MUI reads, which is
+;; why `Element` reserves `:sx` as a passthrough and never interprets it.
+;; `cljs.react.sx` is always explicit: `(use-sx …)` returns a class you put on
+;; `:className`. Nothing here is styled by it.
 
 ;; ── 1. Buttons ───────────────────────────────────────────────────────────────
 
@@ -163,10 +173,11 @@
 
 (defnc MUITab []
   (Section
-    (H2 "🎨 MUI Components")
-    (P {:className "subtitle"}
-      "Material UI v6 components used via the Element DSL — "
-      "any JS React component can be used as a :tag value.")
+    (SectionTitle {} "🎨 MUI Components")
+    (Muted {:style {:marginBottom "1.5rem"}}
+      "Material UI v6 components used via the Element DSL — any JS React "
+      "component can be used as a :tag value. These are styled by MUI's own "
+      "`sx` prop, not by cljs.react.sx.")
 
     (CodeAndOutput {:title "Basic Buttons"    :code buttons-code}    (ButtonsDemo))
     (CodeAndOutput {:title "Controlled Input" :code textfield-code}  (TextFieldDemo))

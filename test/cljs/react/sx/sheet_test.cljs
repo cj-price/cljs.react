@@ -70,6 +70,15 @@
     ;; Hashing the generated CSS rather than the input map buys this.
     (is (= (cls-for {:color "red"}) (cls-for {"color" "red"}))))
 
+  (testing "two sx maps with identical CSS inject the rule only once"
+    ;; Insertion is deduped by intern-class! reporting first-interning, with no
+    ;; second registry holding a copy of every rule string. Two DISTINCT sx
+    ;; maps reaching the same content is the case that needs the dedupe.
+    (sheet/reset-sheet!)
+    (let [c (cls-for {:letter-spacing "0.41em"})]
+      (cls-for {"letter-spacing" "0.41em"})
+      (is (= 1 (count (re-seq (re-pattern (str "\\." c "\\{")) (sheet-text)))))))
+
   (testing "the class in the injected rule is the class returned to the caller"
     ;; Guards the hash-circularity trap: the class name derives from CSS text
     ;; that itself contains the class name, so it must be hashed in sentinel
@@ -125,7 +134,18 @@
     (sheet/intern-class! "cx-" "X{}" "beef")
     (sheet/intern-class! "cx-" "Y{}" "beef")
     (is (= "cx-beef" (sheet/intern-class! "cx-" "X{}" "beef")))
-    (is (= "cx-beef-1" (sheet/intern-class! "cx-" "Y{}" "beef")))))
+    (is (= "cx-beef-1" (sheet/intern-class! "cx-" "Y{}" "beef"))))
+
+  (testing "the prefix is part of the identity, not just of the name"
+    ;; Buckets keyed on the hash alone left prefixes sharing a namespace: the
+    ;; same text under two prefixes returned ONE name, and an unrelated
+    ;; neighbour could push a probe suffix onto content that never collided.
+    ;; The three prefixes are disjoint by construction today, which is exactly
+    ;; the kind of invariant that holds until it doesn't.
+    (let [a (sheet/intern-class! "cx-" "Z{}" "f00d")
+          b (sheet/intern-class! "cx-kf-" "Z{}" "f00d")]
+      (is (= "cx-f00d" a))
+      (is (= "cx-kf-f00d" b) "a shared bucket would have returned cx-f00d"))))
 
 (deftest theme-vars-test
   (let [light (theme/theme->css-vars theme/default-theme-normalized)
@@ -244,6 +264,20 @@
     (let [base (sheet/static-style {:p 1 :color "red"})]
       (is (= (cls-for {:p 1 :color "blue"})
              (sheet/class-for-composed [base {:color "blue"}] bpk bps)))))
+
+  (testing "composing a StaticStyle does not register its standalone rule"
+    (sheet/reset-sheet!)
+    (let [base (sheet/static-style {:padding-top "11px"})
+          cls  (sheet/class-for-composed [base {:padding-bottom "13px"}]
+                                         bpk bps)]
+      (is (= 1 @sheet/compile-count)
+          (str "the composition is one compile; resolving the part to build a"
+               " cache key used to make it two"))
+      (is (not (str/includes? (sheet-text) "{padding-top:11px}"))
+          (str "the part's standalone class is never put on an element, so"
+               " registering it leaked a permanent orphan rule"))
+      (is (str/includes? (sheet-text)
+                         (str "." cls "{padding-bottom:13px;padding-top:11px}")))))
 
   (testing "a warm composition skips the merge"
     (let [parts [{:p 3} {:m 4}]]
@@ -367,3 +401,103 @@
       (sheet/reset-sheet!)
       (let [c (sheet/ensure-static! ss bpk bps)]
         (is (str/includes? (sheet-text) (str "." c "{color:tomato}")))))))
+
+;; ---------------------------------------------------------------------------
+;; Keyframes
+
+(def ^:private fade {:from {:opacity 0} :to {:opacity 1}})
+
+(defn- kf-rules
+  "The `@keyframes` rules the CSSOM actually parsed, as {name -> keyTexts}."
+  []
+  ;; Identified structurally rather than by rule-type constant: a keyframes
+  ;; rule is the only one carrying both a name and child rules.
+  (into {} (for [^js r (css-rules)
+                 :when (and (.-name r) (.-cssRules r))]
+             [(.-name r) (mapv #(.-keyText ^js %) (array-seq (.-cssRules r)))])))
+
+(deftest keyframes-name-test
+  (testing "returns a cx-kf- prefixed name and injects one rule"
+    (let [nm (sheet/keyframes-name! "0%{opacity:0}100%{opacity:1}")]
+      (is (re-matches #"cx-kf-[0-9a-z]+" nm))
+      (is (str/includes? (sheet-text) (str "@keyframes " nm "{")))))
+
+  (testing "identical bodies share one name and inject one rule"
+    (sheet/reset-sheet!)
+    (let [a (sheet/keyframes-name! "0%{opacity:0}")
+          b (sheet/keyframes-name! "0%{opacity:0}")]
+      (is (= a b))
+      (is (= 1 (count (re-seq #"@keyframes " (sheet-text)))))))
+
+  (testing "distinct bodies get distinct names"
+    (is (not= (sheet/keyframes-name! "0%{opacity:0}")
+              (sheet/keyframes-name! "0%{opacity:1}"))))
+
+  (testing "a genuine collision takes a probe suffix"
+    (let [a (sheet/keyframes-name! "0%{left:0}" "abcd")
+          b (sheet/keyframes-name! "0%{left:9px}" "abcd")]
+      (is (= "cx-kf-abcd" a))
+      (is (= "cx-kf-abcd-1" b))
+      (is (= 2 (count (select-keys (kf-rules) [a b])))))))
+
+(deftest keyframes-insert-mode-test
+  ;; The load-bearing one. insertRule parses and accepts EXACTLY one rule, so
+  ;; a design emitting the frames as separate rules — or emitting two
+  ;; @keyframes in one call — passes the dev text-node path and dies here.
+  (doseq [mode [:text :cssom]]
+    (testing (str "insertion mode " mode)
+      (sheet/reset-sheet!)
+      (sheet/set-insert-mode! mode)
+      (let [nm (sheet/keyframes-name! "0%{opacity:0}50%,60%{opacity:0.5}100%{opacity:1}")
+            ks (get (kf-rules) nm)]
+        (is (some? ks) "the CSSOM parsed it as a keyframes rule")
+        (is (= 3 (count ks)) "one CSSOM keyframe per emitted frame")
+        (is (= "0%" (first ks))))))
+  (sheet/set-insert-mode! :text))
+
+(deftest keyframes-value-test
+  (testing "a Keyframes under :animation-name registers both rules"
+    (let [kf  (sheet/keyframes fade)
+          c   (cls-for {:animation-name kf :animation-duration "1s"})
+          nm  (get (parsed-decls c) "animation-name")]
+      (is (re-matches #"cx-kf-[0-9a-z]+" nm))
+      (is (contains? (kf-rules) nm)
+          "the class references keyframes that are actually in the document")))
+
+  (testing "the frames map is what it derefs to"
+    (is (= fade @(sheet/keyframes fade))))
+
+  (testing "it resolves inside nested and responsive positions"
+    (let [kf (sheet/keyframes {:from {:left 0} :to {:left "9px"}})
+          c  (cls-for {:&:hover {:animation-name kf}
+                       :animationName {:xs kf}})
+          t  (sheet-text)
+          nm (sheet/ensure-keyframes! kf)]
+      (is (str/includes? t (str "." c ":hover{animation-name:" nm "}")))
+      (is (str/includes? t (str "." c "{animation-name:" nm "}")))))
+
+  (testing "under any other property it throws rather than emitting a dud"
+    ;; `color:cx-kf-abc` is a value the parser silently drops — the failure
+    ;; shape this library rejects loudly everywhere else.
+    (let [kf (sheet/keyframes fade)
+          e  (try (cls-for {:color kf}) nil (catch :default e e))]
+      (is (some? e))
+      (is (= :cljs.react.sx.sheet/keyframes-not-animation-name
+             (:type (ex-data e))))))
+
+  (testing "a malformed frames map fails at definition, not at first render"
+    (is (thrown? js/Error (sheet/keyframes {})))))
+
+(deftest keyframes-reset-test
+  ;; The design decision made executable. A NAME captured into an sx map would
+  ;; survive this reset while the rule it names would not: the class recompiles
+  ;; correctly, re-emits the stale name, and nothing re-inserts the keyframes.
+  ;; Resolving the object on every compile is what repairs it.
+  (testing "after a reset the class and its keyframes are both back, and agree"
+    (let [kf (sheet/keyframes fade)]
+      (cls-for {:animation-name kf})
+      (sheet/reset-sheet!)
+      (let [c  (cls-for {:animation-name kf})
+            nm (get (parsed-decls c) "animation-name")]
+        (is (str/includes? (sheet-text) (str "@keyframes " nm "{")))
+        (is (contains? (kf-rules) nm))))))

@@ -33,8 +33,13 @@
 (defonce ^:private input-cache #js {})
 (defonce ^:private composed-cache #js {})
 (defonce ^:private css-registry #js {})
-(defonce ^:private inserted #js {})
 (defonce ^:private state #js {})
+
+;; Bumped by reset-sheet!. A StaticStyle and a Keyframes each memoize their
+;; resolved name ON THEMSELVES rather than in a registry, so without a
+;; generation stamp they would keep handing out a name whose rules were just
+;; removed from the document.
+(defonce ^:private generation (atom 0))
 
 (def ^:no-doc compile-count
   "Dev-only counter of actual sx compiles (cache misses). Lets a test or the
@@ -93,25 +98,38 @@
   (reset! text-nodes? (= :text mode)))
 
 (defn- insert-css!
-  "Insert one CSS rule string, once."
+  "Insert one CSS rule string.
+
+  Deduplication is the caller's job, and [[intern-class!]] already does it by
+  content: a class it hands back for the second time already has its rules in
+  the document, so only a freshly interned class reaches here."
   [css]
   (ensure-nodes!)
-  (when-not (gobj/get inserted css)
-    (gobj/set inserted css true)
-    (let [el (gobj/get state "main")]
-      ;; The `and` keeps the dev branch DCE-able: goog/DEBUG is false under
-      ;; :advanced, so the text-node path compiles out entirely.
-      (if (and ^boolean goog/DEBUG @text-nodes?)
-        ;; Text nodes keep the rules visible and live-editable in devtools, at
-        ;; the cost of a re-parse per insertion. DCEs away under :advanced.
-        (.appendChild el (.createTextNode js/document css))
-        (let [^js sheet (.-sheet el)]
-          (try
-            (.insertRule sheet css (.-length (.-cssRules sheet)))
-            (catch :default e
-              (js/console.warn
-                (str "cljs.react.sx: could not insert rule " (pr-str css))
-                e))))))))
+  (let [el (gobj/get state "main")]
+    ;; The `and` keeps the dev branch DCE-able: goog/DEBUG is false under
+    ;; :advanced, so the text-node path compiles out entirely.
+    (if (and ^boolean goog/DEBUG @text-nodes?)
+      ;; Text nodes keep the rules visible and live-editable in devtools, at
+      ;; the cost of a re-parse per insertion. DCEs away under :advanced.
+      (.appendChild el (.createTextNode js/document css))
+      (let [^js sheet (.-sheet el)]
+        (try
+          (.insertRule sheet css (.-length (.-cssRules sheet)))
+          (catch :default e
+            ;; Every rule reaching here was assembled from parts this library
+            ;; already validated, so a rejection is a library bug, not bad
+            ;; input — and a rule that fails to insert is invisible (an
+            ;; unstyled element, or worse a non-animating one). Under DEBUG
+            ;; that is worth a crash; in release, warning and carrying on
+            ;; still beats taking the app down.
+            (when ^boolean goog/DEBUG
+              (throw (ex-info
+                       (str "cljs.react.sx: the stylesheet rejected a rule this"
+                            " library generated: " (pr-str css))
+                       {:type ::rejected-rule :css css} e)))
+            (js/console.warn
+              (str "cljs.react.sx: could not insert rule " (pr-str css))
+              e)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Content-addressed class names
@@ -125,12 +143,24 @@
 (defn ^:no-doc intern-class!
   "Map CSS `content` to a class name, deduplicating by exact text.
 
+  `on-new` is called with the class name only when this content is interned
+  for the first time, and is where its rules get injected. That callback is
+  what lets the sheet dedupe insertions without a second registry holding
+  another copy of every rule string: a class handed back a second time
+  provably already has its rules in the document.
+
   The 3-arity accepts an injected hash code — the seam that lets a test force
   a collision without monkeypatching. A genuine collision (different content,
-  same hash) takes a probe suffix."
-  ([prefix content] (intern-class! prefix content (fnv1a content)))
-  ([prefix content h]
-   (let [b (bucket! css-registry h)
+  same hash) takes a probe suffix.
+
+  Buckets are keyed by prefix AND hash. The prefix is a real part of the
+  identity — the same text interned under two prefixes must yield two names —
+  and sharing a bucket would also let an unrelated neighbour push a probe
+  suffix onto content that never collided with anything."
+  ([prefix content] (intern-class! prefix content (fnv1a content) nil))
+  ([prefix content h] (intern-class! prefix content h nil))
+  ([prefix content h on-new]
+   (let [b (bucket! css-registry (str prefix h))
          n (alength b)]
      (or (loop [i 0]
            (when (< i n)
@@ -154,6 +184,7 @@
                       "put the varying part in a custom property instead "
                       "(:className (use-sx {:width \"var(--w)\"}) with :style "
                       "#js {\"--w\" w}). Most recent CSS: " (pr-str content)))))
+           (when on-new (on-new cls))
            cls)))))
 
 ;; ---------------------------------------------------------------------------
@@ -180,10 +211,9 @@
   "Register a scoped custom-property rule and return its class. Two nested
   providers with `=` themes share one class."
   [vars]
-  (let [decls (sxc/vars-decls vars)
-        cls   (intern-class! "cx-theme-" decls)]
-    (insert-css! (str "." cls "{" decls "}"))
-    cls))
+  (let [decls (sxc/vars-decls vars)]
+    (intern-class! "cx-theme-" decls (fnv1a decls)
+                   (fn [cls] (insert-css! (str "." cls "{" decls "}"))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Baseline
@@ -199,26 +229,144 @@
     (set! (.-textContent ^js (gobj/get state "baseline")) css)))
 
 ;; ---------------------------------------------------------------------------
+;; Keyframes
+;;
+;; A `@keyframes` rule does not fit the one-rule-per-generated-class model: its
+;; name is global and its body is nested blocks rather than declarations. So it
+;; gets the same treatment a class gets instead — content-addressed, interned
+;; by body text, append-only.
+;;
+;; A Keyframes travels through the sx map AS AN OBJECT and is substituted for
+;; its name here, on the compile path. Letting the name into the map instead
+;; would put a snapshot of registry state inside data the rest of the system
+;; treats as pure: a name captured at namespace load survives `reset-sheet!`
+;; and hot reload while the rule it names does not, and both failures are
+;; silent — the element renders perfectly and simply never animates. Deriving
+;; the name on every compile makes both correct by construction.
+
+(defn ^:no-doc keyframes-name!
+  "Register an `@keyframes` body and return its global name. Identical bodies
+  share one name and one rule.
+
+  Inserted as a single `insertRule` call, which is what the CSSOM path
+  requires — and it accepts a whole `@keyframes` rule, so the dev text-node
+  path and the shipping path agree on this shape."
+  ([body] (keyframes-name! body (fnv1a body)))
+  ([body h]
+   (intern-class! "cx-kf-" body h
+                  (fn [nm] (insert-css! (str "@keyframes " nm "{" body "}"))))))
+
+(defonce ^:private keyframes-defined?
+  ;; Gates the substitution walk below, so an app that never defines keyframes
+  ;; pays one atom read per compile MISS and nothing on the hot path. Monotone
+  ;; and deliberately NOT cleared by reset-sheet!: it gates correctness, and a
+  ;; Keyframes defined before a reset is still live after it.
+  (atom false))
+
+(deftype ^:no-doc Keyframes [frames body ^:mutable nm ^:mutable gen]
+  ;; Derefs to the frames map it was given — the INPUT, exactly as a
+  ;; StaticStyle derefs to its sx map. Registration is an effect and gets a
+  ;; named function, not a deref.
+  IDeref
+  (-deref [_] frames)
+
+  ;; The var IS the identity, as for StaticStyle: re-evaluating on hot reload
+  ;; is precisely when a fresh identity (and so a fresh name) is wanted.
+  IEquiv
+  (-equiv [this other] (identical? this other))
+
+  IHash
+  (-hash [this] (goog/getUid this)))
+
+(defn keyframes
+  "Wrap a frames map as a lazily-registered keyframes identity.
+
+  The body is compiled EAGERLY — it is pure text needing neither theme nor
+  breakpoints, so a malformed frames map fails at the `def` rather than at
+  whichever render first touches it. Only registration is deferred.
+
+  Unlike a StaticStyle there is no per-breakpoint cache: a keyframes body
+  cannot contain a media query, so it has no breakpoint dimension."
+  [frames]
+  (let [body (sxc/keyframes->body frames)]
+    (reset! keyframes-defined? true)
+    (Keyframes. frames body nil @generation)))
+
+(defn ^:no-doc ensure-keyframes!
+  [^Keyframes kf]
+  (let [g @generation]
+    (when-not (== g (.-gen kf))
+      (set! (.-gen kf) g)
+      (set! (.-nm kf) nil))
+    (or (.-nm kf)
+        (let [nm (keyframes-name! (.-body kf))]
+          (set! (.-nm kf) nm)
+          nm))))
+
+(defn- keyframes-value!
+  [prop kf]
+  (if (and (or (keyword? prop) (string? prop))
+           (= "animation-name" (theme/kebab prop)))
+    (ensure-keyframes! kf)
+    (throw (ex-info
+             (str "cljs.react.sx: keyframes are only meaningful under "
+                  "`:animation-name`, but one was given for " (pr-str prop)
+                  ". Emitting its name for any other property produces a value"
+                  " the parser silently discards.")
+             {:type ::keyframes-not-animation-name :prop prop}))))
+
+(defn- prefixed?
+  [k c]
+  (and (or (keyword? k) (string? k))
+       (str/starts-with? (if (string? k) k (name k)) c)))
+
+(defn- resolve-keyframes
+  "Substitute Keyframes values for their registered names.
+
+  Recurses as `sxc/sx->rules` does: a `&`/`@` key opens a new rule and clears
+  the enclosing property, while any other map value is a responsive map whose
+  keys are breakpoints — so `prop` carries the real property down to a
+  Keyframes nested inside one."
+  [sx prop]
+  (reduce-kv
+    (fn [m k v]
+      (assoc m k
+             (cond
+               (map? v) (resolve-keyframes
+                          v (when-not (or (prefixed? k "&") (prefixed? k "@"))
+                              (or prop k)))
+               (instance? Keyframes v) (keyframes-value! (or prop k) v)
+               :else v)))
+    {} sx))
+
+;; ---------------------------------------------------------------------------
 ;; The style cache
 
 (defn- compile-and-register!
+  "Compile `sx` and inject its rules, returning the class.
+
+  Default theme vars are ensured here rather than in [[class-for]]: a warm
+  cache hit can only exist because an earlier miss ran this, and `reset-sheet!`
+  clears the cache and the nodes together — so the miss path is the last point
+  at which they can still be missing, and the probe need not check every call."
   [sx bps]
   (when ^boolean goog/DEBUG (swap! compile-count inc))
+  (ensure-default-vars!)
   ;; Rendered once: the declaration bodies are identical in sentinel and final
   ;; form, so only the prelude differs between the hashed text and the text
   ;; that reaches the document.
-  (let [rendered (sxc/render-rules (sxc/sx->rules sx bps))
-        sentinel (str/join "\n" (sxc/rendered->css rendered "&"))
-        cls      (intern-class! "cx-" sentinel)]
-    (doseq [css (sxc/rendered->css rendered (str "." cls))]
-      (insert-css! css))
-    cls))
+  (let [sx       (if @keyframes-defined? (resolve-keyframes sx nil) sx)
+        rendered (sxc/render-rules (sxc/sx->rules sx bps))
+        sentinel (str/join "\n" (sxc/rendered->css rendered "&"))]
+    (intern-class! "cx-" sentinel (fnv1a sentinel)
+                   (fn [cls]
+                     (doseq [css (sxc/rendered->css rendered (str "." cls))]
+                       (insert-css! css))))))
 
 (defn class-for
   "Class name for `sx` under `bpk` / `bps`. Compiles and registers on first
   use; later calls with an `=` sx map hit the cache."
   [sx bpk bps]
-  (ensure-default-vars!)
   ;; Bucket on the sx map's hash alone rather than on [sx bpk]: allocating a
   ;; vector per probe cost more than the collisions it avoided, and nobody
   ;; overrides breakpoints, so bpk is one interned constant that the chain
@@ -237,11 +385,6 @@
 
 ;; ---------------------------------------------------------------------------
 ;; defstyle identities
-
-;; Bumped by reset-sheet!. A StaticStyle memoizes its class on itself rather
-;; than in a registry, so without a generation stamp it would keep handing out
-;; a class whose rules were just removed from the document.
-(defonce ^:private generation (atom 0))
 
 (deftype ^:no-doc StaticStyle [sx cache ^:mutable gen]
   IDeref
@@ -297,17 +440,18 @@
   `&:hover` maps rather than letting one clobber the other.
 
   Parts are validated: an unmergeable part (a string, a nested vector) would
-  otherwise reduce away into the EMPTY class, silently unstyling the element."
+  otherwise reduce away into the EMPTY class, silently unstyling the element.
+
+  A `StaticStyle` part enters the cache key as ITSELF rather than as its
+  compiled class. It already hashes by uid and compares by identity, so it is
+  the cheaper key — and resolving one here used to compile it and permanently
+  register its standalone rule, which a composition never puts on an element."
   [parts bpk bps]
   (doseq [p parts]
     (when-not (or (nil? p) (map? p) (instance? StaticStyle p))
       (invalid-sx! p)))
-  (let [parts (remove nil? parts)
-        ckey  [(mapv #(if (instance? StaticStyle %)
-                        (ensure-static! % bpk bps)
-                        %)
-                     parts)
-               bpk]
+  (let [parts (vec (remove nil? parts))
+        ckey  [parts bpk]
         b     (bucket! composed-cache (hash ckey))
         n     (alength b)]
     (or (loop [i 0]
@@ -354,7 +498,6 @@
   (gobj/clear input-cache)
   (gobj/clear composed-cache)
   (gobj/clear css-registry)
-  (gobj/clear inserted)
   (swap! generation inc)
   (reset! interned-count 0)
   (reset! compile-count 0))

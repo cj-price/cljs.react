@@ -400,3 +400,80 @@
     (let [^js a (renderHook #(sx/use-sx [card-style {:p 4}]))
           ^js b (renderHook #(sx/use-sx {:p 4 :border-radius :shape.border-radius}))]
       (is (= (.. b -result -current) (.. a -result -current))))))
+
+;; ---------------------------------------------------------------------------
+
+(deftest keyframes-test
+  (testing "a component animates: both rules land and the class points at them"
+    (let [spin (sx/keyframes {:from {:transform "rotate(0deg)"}
+                              :to   {:transform "rotate(360deg)"}})
+          ^js r (renderHook #(sx/use-sx {:animation-name spin
+                                         :animation-duration "900ms"}))
+          cls   (.. r -result -current)
+          nm    (sx/keyframes-name spin)
+          t     (sheet-text)]
+      (is (str/includes? t (str "@keyframes " nm
+                                "{0%{transform:rotate(0deg)}"
+                                "100%{transform:rotate(360deg)}}")))
+      (is (str/includes? t (str "." cls "{animation-duration:900ms;"
+                                "animation-name:" nm "}")))))
+
+  (testing "the keyframes rule is injected exactly once under StrictMode"
+    (cleanup)
+    (let [pulse (sx/keyframes {:from {:opacity 0.4} :to {:opacity 1}})
+          Comp  (fn [_]
+                  (Element {:tag "div"
+                            :className (sx/use-sx {:animation-name pulse
+                                                   :animation-duration "1s"})}
+                    "hi"))]
+      (render (react/createElement react/StrictMode nil
+                                   (react/createElement Comp nil)))
+      (is (= 1 (count (re-seq (re-pattern (str "@keyframes "
+                                               (sx/keyframes-name pulse) "\\{"))
+                              (sheet-text)))))))
+
+  (testing "two definitions with identical frames share one rule"
+    (let [a (sx/keyframes {:from {:opacity 0} :to {:opacity 1}})
+          b (sx/keyframes {"0%" {:opacity 0} "100%" {:opacity 1}})]
+      (is (= (sx/keyframes-name a) (sx/keyframes-name b)))))
+
+  (testing "deref gives back the frames map, not the registered name"
+    ;; Symmetric with defstyle: a deref is a read. Registration is a named,
+    ;; visibly effectful call.
+    (let [frames {:from {:opacity 0} :to {:opacity 1}}]
+      (is (= frames @(sx/keyframes frames)))))
+
+  (testing "a theme swap still regenerates no CSS"
+    (cleanup)
+    (sheet/reset-sheet!)
+    (let [fade  (sx/keyframes {:from {:opacity 0} :to {:opacity 1}})
+          mode  (atom :a)
+          set!* (atom nil)
+          Root  (fn [_]
+                  (let [s (react/useState 0)]
+                    (reset! set!* (aget s 1))
+                    (sx/ThemeProvider
+                      {:theme (if (= :a @mode)
+                                {:palette {:primary {:main "#aaaaaa"}}}
+                                {:palette {:primary {:main "#bbbbbb"}}})}
+                      (Element {:tag "span"
+                                :className (sx/use-sx
+                                             {:color :palette.primary.main
+                                              :animation-name fade
+                                              :animation-duration "1s"})}
+                        "hi"))))]
+      (render (react/createElement Root nil))
+      (let [before   (sheet-text)
+            compiles @sheet/compile-count]
+        (reset! mode :b)
+        (act (fn [] (@set!* 1)))
+        (is (= before (sheet-text)))
+        (is (= compiles @sheet/compile-count)))))
+
+  (testing "a frames map is validated at definition, not at first render"
+    (is (thrown? js/Error (sx/keyframes {:from {:opacity 0} "0%" {:opacity 1}})))
+    (is (thrown? js/Error (sx/keyframes {:from {}}))))
+
+  (testing "a Keyframes anywhere but :animation-name is refused"
+    (let [kf (sx/keyframes {:from {:opacity 0} :to {:opacity 1}})]
+      (is (thrown? js/Error (sx/style {:color kf}))))))
