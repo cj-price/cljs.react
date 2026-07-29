@@ -72,9 +72,14 @@
   "The collection context of an unnested rule."
   {:at nil :order 0 :selector "&"})
 
-(defn- key-name
+(defn ^:no-doc key-name
   "The raw name of an sx key. Strings pass through; keywords/symbols use their
-  name so `:&:hover` and `\"&:hover\"` are the same key."
+  name so `:&:hover` and `\"&:hover\"` are the same key.
+
+  Public because `sheet.cljs` walks the same map to substitute keyframes and
+  must agree with this namespace about what an sx key IS. When it decided that
+  for itself it excluded symbols, so `{'animation-name kf}` was rejected while
+  `{'color \"red\"}` compiled — one map shape, two answers."
   [k]
   (if (string? k) k (name k)))
 
@@ -141,13 +146,13 @@
 (defn- check-value!
   [prop v]
   (when (or (re-find unsafe-value v)
-            (odd? (count (re-seq #"\"" v)))
-            (odd? (count (re-seq #"'" v))))
+            (not (theme/delimiters-balanced? v)))
     (throw (ex-info
              (str "cljs.react.sx: value for " (pr-str prop) " is not a safe CSS"
-                  " value. `{`, `}`, `;`, `<`, CSS comments and unbalanced"
-                  " quotes are rejected, because they let a value escape its"
-                  " own declaration. Got " (pr-str v) ".")
+                  " value. `{`, `}`, `;`, `<`, CSS comments, unbalanced quotes,"
+                  " parentheses or brackets, and a trailing backslash are"
+                  " rejected, because they let a value escape its own"
+                  " declaration. Got " (pr-str v) ".")
              {:type ::unsafe-value :prop prop :value v})))
   v)
 
@@ -258,13 +263,19 @@
 
 (defn- check-selector!
   [k ks]
-  (when-not (re-matches selector-re ks)
+  ;; The charset alone is not enough: it admits `(`, `)`, `[` and `]` with no
+  ;; pairing requirement, so `&:has(.a` compiles to `.cx-1:has(.a{…}` — one
+  ;; unclosed function that swallows every rule appended after it on the dev
+  ;; text-node path, where nothing re-parses. Same scan the values get.
+  (when-not (and (re-matches selector-re ks)
+                 (theme/delimiters-balanced? ks))
     (throw (ex-info
              (str "cljs.react.sx: " (pr-str k) " is not a usable nested "
-                  "selector. It must start with `&` and use only identifier "
-                  "characters, combinators and pseudo/attribute syntax — a "
-                  "comma or a brace would let the rule escape the generated "
-                  "class.")
+                  "selector. It must start with `&`, use only identifier "
+                  "characters, combinators and pseudo/attribute syntax, and "
+                  "close every parenthesis and bracket it opens — a comma, a "
+                  "brace or a dangling `(` would let the rule escape the "
+                  "generated class.")
              {:type ::invalid-selector :key k})))
   ks)
 

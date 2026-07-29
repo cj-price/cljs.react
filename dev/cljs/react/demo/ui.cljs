@@ -28,6 +28,22 @@
   (sx/keyframes {:from {:opacity 0 :transform "translateY(4px)"}
                  :to   {:opacity 1 :transform "translateY(0)"}}))
 
+(def calm
+  "Compose into anything that animates. WCAG 2.2.2 (Pause, Stop, Hide) is a
+  LEVEL A requirement and every animation here is `:infinite`, so without this
+  the page moves forever with no way to stop it — the sustained motion that
+  triggers vestibular symptoms.
+
+  `0.01ms` rather than `:none`: a duration of zero would skip the animation's
+  final frame, so a component that animates INTO its resting state would be
+  left in its `from` state. One iteration at an imperceptible duration lands on
+  `to` instead. A raw at-rule, which the sx dialect passes through — the
+  library needs no special support for this."
+  {"@media (prefers-reduced-motion: reduce)"
+   {:animation-duration "0.01ms"
+    :animation-iteration-count 1
+    :transition-duration "0.01ms"}})
+
 ;; ---------------------------------------------------------------------------
 
 (defn- tint
@@ -259,13 +275,19 @@
     children))
 
 (defnc FieldLabel
-  [{:keys [children] :as props}]
+  ;; `tight?` rather than a caller-supplied `{:mb 0}` class. Two single-class
+  ;; selectors of equal specificity resolve by STYLESHEET INSERTION ORDER, not
+  ;; by the order written, so the override silently lost to this component's
+  ;; own rule and every label kept its 0.75 margin. `pass`'s docstring warns
+  ;; about exactly this; a variation the component owns has no such hazard.
+  [{:keys [tight? children] :as props}]
   (apply Element (pass props
                  {:tag "label"
-                  :className (use-sx {:display :block :mb 0.75
-                                      :font-size "0.8125rem" :font-weight 500
-                                      :color :palette.text.secondary})}
-                 [])
+                  :className (use-sx [{:display :block :mb 0.75
+                                       :font-size "0.8125rem" :font-weight 500
+                                       :color :palette.text.secondary}
+                                      (when tight? {:mb 0})])}
+                 [:tight?])
     children))
 
 (defnc FieldError
@@ -368,7 +390,7 @@
   [{:keys [size]}]
   (Span {:role "status"
          :aria-label "Loading"
-         :className (use-sx {:display :inline-block :flex-shrink 0
+         :className (use-sx [{:display :inline-block :flex-shrink 0
                              :width (or size "1rem") :height (or size "1rem")
                              :border "2px solid"
                              :border-color :palette.divider
@@ -377,46 +399,47 @@
                              :animation-name spin
                              :animation-duration "700ms"
                              :animation-timing-function :linear
-                             :animation-iteration-count :infinite})}))
+                             :animation-iteration-count :infinite} calm])}))
 
 (defnc PulseDot
   [{:keys [tone]}]
   (Span {:aria-hidden "true"
-         :className (use-sx {:display :inline-block :flex-shrink 0
+         :className (use-sx [{:display :inline-block :flex-shrink 0
                              :width "0.5rem" :height "0.5rem"
                              :border-radius "50%"
                              :bgcolor (:fg (tone-token (or tone :primary)))
                              :animation-name pulse
                              :animation-duration "1400ms"
                              :animation-timing-function :ease-in-out
-                             :animation-iteration-count :infinite})}))
+                             :animation-iteration-count :infinite} calm])}))
 
 ;; A pulsing placeholder bar, for pending states with a known shape.
 (defnc Skeleton
   [{:keys [width height]}]
   (Span {:aria-hidden "true"
-         :className (use-sx {:display :block :border-radius 0.5
+         :className (use-sx [{:display :block :border-radius 0.5
                              :width (or width "100%")
                              :height (or height "0.75rem")
                              :bgcolor :palette.surface.sunken
                              :animation-name pulse
                              :animation-duration "1400ms"
                              :animation-timing-function :ease-in-out
-                             :animation-iteration-count :infinite})}))
+                             :animation-iteration-count :infinite} calm])}))
 
 (defnc Alert
   [{:keys [tone children] :as props}]
   (let [{:keys [fg bg]} (tone-token (or tone :info))]
     (apply Element (pass props
                    {:tag "div"
-                    :className (use-sx {:display :flex :gap 1 :align-items :center
-                                        :px 1.5 :py 1.25 :border-radius 1
-                                        :border "1px solid" :border-color fg
-                                        :bgcolor bg :color fg
-                                        :font-size "0.875rem"
-                                        :animation-name rise
-                                        :animation-duration "180ms"
-                                        :animation-timing-function :ease-out})}
+                    :className (use-sx [{:display :flex :gap 1 :align-items :center
+                                         :px 1.5 :py 1.25 :border-radius 1
+                                         :border "1px solid" :border-color fg
+                                         :bgcolor bg :color fg
+                                         :font-size "0.875rem"
+                                         :animation-name rise
+                                         :animation-duration "180ms"
+                                         :animation-timing-function :ease-out}
+                                        calm])}
                    [:tone])
       children)))
 
@@ -435,7 +458,11 @@
    :font-family :typography.font-family-mono
    :font-size {:xs "0.75rem" :sm "0.8125rem"}
    :line-height 1.7 :overflow-x :auto :box-shadow 2
-   :border "1px solid" :border-color :palette.grey.800
+   ;; Not `:palette.grey.800`: the grey scale deliberately inverts between
+   ;; themes while `:surface.code` deliberately does NOT, so grey.800 resolved
+   ;; to a near-white #e2e8f0 border around a #0b1220 pane in dark mode. Two
+   ;; separately-correct decisions colliding; this surface needs its own token.
+   :border "1px solid" :border-color :palette.surface.code-border
 
    "&::before" {:content "ClojureScript" :position :absolute
                 :top "0.85rem" :right "1rem" :font-size "0.6875rem"

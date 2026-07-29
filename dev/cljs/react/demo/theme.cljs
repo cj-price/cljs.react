@@ -30,10 +30,27 @@
    :font-family-mono "'JetBrains Mono', 'Monaco', 'Menlo', 'Consolas', monospace"
    :line-height 1.6})
 
+(def ^:private code
+  "Prism token colours. Shared rather than duplicated, because `:surface.code`
+  is dark in both themes, so these are theme-INVARIANT — and eight entries
+  written out twice is the cheapest way to break the key-parity rule above.
+
+  `:comment` and `:label` were #64748b, which measured 3.75:1 and 3.93:1 on the
+  two code surfaces. Comments are where the samples explain themselves, so the
+  lowest-contrast text carried the highest-value content; #8b98ab is 6.10:1 and
+  6.40:1."
+  {:plain "#e2e8f0" :comment "#8b98ab" :keyword "#c792ea"
+   :string "#a5d6a7" :number "#ffcb6b" :function "#82aaff"
+   :punctuation "#94a3b8" :label "#8b98ab"})
+
 (def light
   {:palette
    {:mode      :light
-    :primary   {:main "#ea580c" :light "#fb923c" :dark "#c2410c"
+    ;; #ea580c measured 3.56:1 against white at 14px/500 — under the 4.5:1 AA
+    ;; minimum, on the site's most-used control (every primary button and the
+    ;; selected tab). #c2410c is 5.18:1. Everything downstream resolves through
+    ;; var(--cx-palette-primary-main), so this one token carries the fix.
+    :primary   {:main "#c2410c" :light "#fb923c" :dark "#9a3412"
                 :contrast-text "#ffffff"}
     :secondary {:main "#0d9488" :light "#2dd4bf" :dark "#0f766e"
                 :contrast-text "#ffffff"}
@@ -45,7 +62,7 @@
                 :contrast-text "#ffffff"}
     :info      {:main "#0369a1" :light "#38bdf8" :dark "#075985"
                 :contrast-text "#ffffff"}
-    :text      {:primary "#0f172a" :secondary "#475569" :disabled "#94a3b8"}
+    :text      {:primary "#0f172a" :secondary "#475569" :disabled "#5f6b7f"}
     :background {:default "#f1f5f9" :paper "#ffffff"}
     :divider   "#e2e8f0"
 
@@ -54,17 +71,16 @@
     ;; them, and every editor screenshot people compare against is dark.
     :surface   {:sunken "#e2e8f0" :raised "#ffffff" :code "#0f172a"
                 :overlay "rgba(255, 255, 255, 0.82)"
-                :tint "rgba(234, 88, 12, 0.08)"}
+                :code-border "#1e293b"
+                :tint "rgba(194, 65, 12, 0.08)"}
 
     :grey      {:50 "#f8fafc" :100 "#f1f5f9" :200 "#e2e8f0" :300 "#cbd5e1"
                 :400 "#94a3b8" :500 "#64748b" :600 "#475569" :700 "#334155"
                 :800 "#1e293b" :900 "#0f172a"}
 
-    :code      {:plain "#e2e8f0" :comment "#64748b" :keyword "#c792ea"
-                :string "#a5d6a7" :number "#ffcb6b" :function "#82aaff"
-                :punctuation "#94a3b8" :label "#64748b"}
+    :code      code
 
-    :focus     {:ring "rgba(234, 88, 12, 0.35)"}
+    :focus     {:ring "rgba(194, 65, 12, 0.35)"}
     :dot       "#cbd5e1"}
 
    :typography typography
@@ -86,12 +102,13 @@
                 :contrast-text "#052e16"}
     :info      {:main "#38bdf8" :light "#7dd3fc" :dark "#0ea5e9"
                 :contrast-text "#082f49"}
-    :text      {:primary "#e2e8f0" :secondary "#94a3b8" :disabled "#64748b"}
+    :text      {:primary "#e2e8f0" :secondary "#94a3b8" :disabled "#8593a6"}
     :background {:default "#0b1220" :paper "#111a2b"}
     :divider   "#1e293b"
 
     :surface   {:sunken "#0f172a" :raised "#172136" :code "#0b1220"
                 :overlay "rgba(17, 26, 43, 0.82)"
+                :code-border "#1e293b"
                 :tint "rgba(251, 146, 60, 0.12)"}
 
     ;; The scale inverts: `grey.50` stays "the one furthest from the text
@@ -100,9 +117,7 @@
                 :400 "#475569" :500 "#64748b" :600 "#94a3b8" :700 "#cbd5e1"
                 :800 "#e2e8f0" :900 "#f8fafc"}
 
-    :code      {:plain "#e2e8f0" :comment "#64748b" :keyword "#c792ea"
-                :string "#a5d6a7" :number "#ffcb6b" :function "#82aaff"
-                :punctuation "#94a3b8" :label "#64748b"}
+    :code      code
 
     :focus     {:ring "rgba(251, 146, 60, 0.4)"}
     :dot       "#1e293b"}

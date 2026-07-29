@@ -120,8 +120,15 @@ use-effect   use-memo   use-callback   use-ref   use-atom   use-lazy-loadable
   generated class" — a `@keyframes` name is global by CSS design. It is
   content-addressed like a class, and the object (not its name) travels in the
   sx map, resolved on the compile-miss path in `sheet.cljs`. A name captured
-  into a map is a snapshot of registry state: it survives `reset-sheet!` and hot
-  reload while its rule does not, and the failure is silent.
+  into a map is a snapshot of registry state, and the failure is silent.
+  Precisely: after `reset-sheet!` the rule is gone while the captured name
+  survives, so the element renders and never animates — the `generation` stamp
+  repairs that for an object and cannot for a copy. Across HOT RELOAD the old
+  rule survives instead (the registry is append-only and `generation` is only
+  bumped by `reset-sheet!`, which is test-only), so a stale name animates the
+  OLD frames forever. The object fixes the first case and the common shape of
+  the second; it does not fix a `Keyframes` captured into a `defstyle` in a
+  namespace shadow did not reload, which keeps the old object and old class.
 
 ## Naming Conventions
 

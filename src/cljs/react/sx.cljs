@@ -5,12 +5,18 @@
   Opt-in — `cljs.react.core` never requires this namespace, so a consumer that
   doesn't require it pays nothing.
 
-  Theme values are indirected through CSS custom properties. Swapping a theme
-  rewrites the `:root` block and nothing else: not one style rule is
-  regenerated and every component keeps the class it already had. Components
-  that read the theme do re-render — they are context subscribers by
-  construction — but that render is a memo hit returning the same class and
-  mutating no DOM.
+  Theme values are indirected through CSS custom properties. Swapping the root
+  theme rewrites the `:root` block: not one style rule is regenerated and every
+  component keeps the class it already had. Components that read the theme do
+  re-render — they are context subscribers by construction — but that render is
+  a memo hit returning the same class and mutating no DOM.
+
+  A NESTED provider is the exception, and the only thing a swap can add: its
+  variables are baked into a `.cx-theme-…` class rather than referenced, so it
+  registers one such rule per distinct theme it inherits, permanently. Those
+  are var blocks rather than restyles — the style rules and the compile count
+  still do not move — but \"regenerates no CSS\" is a claim about style rules,
+  not about the total rule count.
 
       (defnc Card [{:keys [children]}]
         (let [cls (use-sx {:p 2
@@ -126,7 +132,14 @@
   Pass the returned value itself, not its name. The name is derived on every
   compile, which is what keeps it correct across hot reload; a name captured
   into a map goes stale silently, leaving an element that renders perfectly and
-  never animates. Use [[keyframes-name]] only where a string is unavoidable.
+  never animates. Use [[keyframes-name]] only where a string is unavoidable,
+  and call it at the point of use — never store what it returns.
+
+  Bind with `def`, never `defonce`. `defonce` keeps the old object across a
+  hot reload, so an edited frames map is ignored and the element animates the
+  old animation forever — the one way to reintroduce the staleness this design
+  exists to prevent. Same reasoning as [[defstyle]], which expands to `def`
+  deliberately.
 
   Prefer the `animation-*` longhands over the `animation` shorthand: sx
   composition deep-merges per property, so the shorthand resets every

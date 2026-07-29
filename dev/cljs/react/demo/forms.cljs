@@ -1,5 +1,5 @@
 (ns cljs.react.demo.forms
-  (:require [cljs.react.core :refer [use-ref use-state
+  (:require [cljs.react.core :refer [use-ref use-state use-id
                                      use-form use-field use-form-meta on-submit]]
             [cljs.react.sx :refer [use-sx]]
             [cljs.react.demo.ui :refer [CodeAndOutput Btn Row Stack Grid
@@ -41,26 +41,43 @@
         (Span {:className text-cls} error)))))
 
 (defnc FieldHeader
-  [{:keys [label dirty children]}]
+  ;; `htmlFor` when the header labels ONE control; `labelId` when it names a
+  ;; group that points back at it with aria-labelledby. A group gets a span,
+  ;; because a <label> with no control is not a label.
+  [{:keys [label dirty htmlFor labelId children]}]
   (Row {:justify :space-between :gap 1}
     ;; `children` arrives as a seq, so it is spread rather than passed as one
     ;; child — React would otherwise read it as a keyless list and warn.
     (apply Row {:gap 1}
-      (FieldLabel {:className (use-sx {:mb 0})} label)
+      (if labelId
+        (Span {:id labelId
+               :className (use-sx {:font-size "0.8125rem" :font-weight 500
+                                   :color :palette.text.secondary})}
+          label)
+        (FieldLabel {:tight? true :htmlFor htmlFor} label))
       children)
     (DirtyPill {:dirty dirty})))
 
 (defnc FormFieldInput
   [{:keys [value error dirty onChange onBlur label type placeholder]}]
-  (Stack {:gap 1}
-    (FieldHeader {:label label :dirty dirty})
-    (TextInput {:type (or type "text")
-                :placeholder placeholder
-                :value (or value "")
-                :error? (boolean error)
-                :onChange onChange
-                :onBlur onBlur})
-    (ErrorLine {:error error})))
+  ;; The id is minted HERE and threaded both ways, so the association is the
+  ;; component's job rather than every caller's. Without it the label was a
+  ;; sibling two levels up the tree and the input's only accessible name was
+  ;; its placeholder — or, where there was none, the empty string.
+  (let [id     (use-id)
+        err-id (str id "-error")]
+    (Stack {:gap 1}
+      (FieldHeader {:label label :dirty dirty :htmlFor id})
+      (TextInput {:id id
+                  :type (or type "text")
+                  :placeholder placeholder
+                  :value (or value "")
+                  :error? (boolean error)
+                  :aria-invalid (when error "true")
+                  :aria-describedby (when error err-id)
+                  :onChange onChange
+                  :onBlur onBlur})
+      (Div {:id err-id} (ErrorLine {:error error})))))
 
 (defnc FormSubmitBtn
   [{:keys [f label]}]
@@ -76,7 +93,12 @@
 
 (defnc FormCheckboxInput
   [{:keys [checked error dirty onChange onBlur label]}]
-  (Row {:gap 1.5 :align :flex-start}
+  ;; WRAPPED in the label rather than sitting beside it. The text was in a
+  ;; sibling span, so the checkbox had no accessible name at all — announced as
+  ;; an unnamed checkbox — and clicking the words did nothing, which also costs
+  ;; anyone with a motor impairment the larger hit target.
+  (Label {:className (use-sx {:display :flex :gap 1.5 :align-items :flex-start
+                              :cursor :pointer})}
     (Input {:type "checkbox"
             :checked (boolean checked)
             :className (use-sx {:mt 0.25 :width "1rem" :height "1rem"
@@ -114,10 +136,14 @@
         sr-cls  (use-sx {:position :absolute :width "1px" :height "1px"
                          :padding 0 :margin "-1px" :overflow :hidden
                          :border 0 :white-space :nowrap
-                         :clip-path "inset(50%)"})]
+                         :clip-path "inset(50%)"})
+        ;; A bare <label> beside a group of radios labels nothing — a <label>
+        ;; needs one control. Naming the GROUP is what makes "Plan" reach a
+        ;; screen reader, and each radio keeps its own wrapping label.
+        label-id (use-id)]
     (Stack {:gap 1}
-      (FieldHeader {:label label :dirty dirty})
-      (Row {:gap 1}
+      (FieldHeader {:label label :dirty dirty :labelId label-id})
+      (Row {:gap 1 :role "radiogroup" :aria-labelledby label-id}
         (for [opt options
               :let [on? (= value (:value opt))]]
           (Label {:key (:value opt)
@@ -192,13 +218,15 @@
                       {:values      {:username ""}
                        :validate-on :blur
                        :validate    validate-username-async})
-        username-fp (use-field f :username)]
+        username-fp (use-field f :username)
+        username-id (use-id)]
     (Form {:onSubmit (on-submit f)}
       (Stack {:gap 2.5}
         (Stack {:gap 1}
-          (FieldHeader {:label "Username"}
+          (FieldHeader {:label "Username" :htmlFor username-id}
             (FormValidatingIndicator {:f f}))
-          (TextInput {:placeholder "Try \"taken\""
+          (TextInput {:id username-id
+                      :placeholder "Try \"taken\""
                       :value (or (:value username-fp) "")
                       :error? (boolean (:error username-fp))
                       :onChange (:onChange username-fp)
@@ -243,13 +271,15 @@
 
 (defnc FieldWithCount [{:keys [f field-key label]}]
   (let [fp      (use-field f field-key)
+        id      (use-id)
         counter (use-ref 0)
         _       (reset! counter (inc @counter))]
     (Stack {:gap 1}
       (Row {:justify :space-between :gap 1}
-        (FieldLabel {:className (use-sx {:mb 0})} label)
+        (FieldLabel {:tight? true :htmlFor id} label)
         (Badge {:tone :neutral} "renders: " @counter))
-      (TextInput {:value (or (:value fp) "")
+      (TextInput {:id id
+                  :value (or (:value fp) "")
                   :onChange (:onChange fp)
                   :onBlur (:onBlur fp)}))))
 

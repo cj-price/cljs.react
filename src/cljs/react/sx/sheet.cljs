@@ -147,7 +147,9 @@
   for the first time, and is where its rules get injected. That callback is
   what lets the sheet dedupe insertions without a second registry holding
   another copy of every rule string: a class handed back a second time
-  provably already has its rules in the document.
+  provably already has its rules in the document — because it is recorded only
+  after `on-new` returns, so a callback that throws interns nothing and the
+  next call retries from scratch.
 
   The 3-arity accepts an injected hash code — the seam that lets a test force
   a collision without monkeypatching. A genuine collision (different content,
@@ -169,6 +171,12 @@
                  (gobj/get e "cls")
                  (recur (inc i))))))
          (let [cls (if (zero? n) (str prefix h) (str prefix h "-" n))]
+           ;; `on-new` FIRST, and only then record. Recording first meant a
+           ;; failed or half-finished insertion was interned as complete: every
+           ;; later call matched the content probe above, returned the class
+           ;; without re-running `on-new`, and nothing ever retried — which is
+           ;; exactly the invariant this docstring claims, inverted.
+           (when on-new (on-new cls))
            (.push b #js {"css" content "cls" cls})
            (when ^boolean goog/DEBUG
              ;; The registry is append-only by design — repeated toggling among
@@ -184,7 +192,6 @@
                       "put the varying part in a custom property instead "
                       "(:className (use-sx {:width \"var(--w)\"}) with :style "
                       "#js {\"--w\" w}). Most recent CSS: " (pr-str content)))))
-           (when on-new (on-new cls))
            cls)))))
 
 ;; ---------------------------------------------------------------------------
@@ -293,8 +300,23 @@
     (Keyframes. frames body nil @generation)))
 
 (defn ^:no-doc ensure-keyframes!
-  [^Keyframes kf]
-  (let [g @generation]
+  [kf]
+  ;; Checked rather than hinted: `^Keyframes` is erased in CLJS, so without
+  ;; this the frames map — the likeliest thing to pass by mistake, since the
+  ;; docs spend a paragraph on object-versus-name — reached `.-gen`/`.-body`
+  ;; and died on a raw TypeError from library internals, AFTER `set!`ing a
+  ;; field on the caller's own value.
+  (when-not (instance? Keyframes kf)
+    (throw (ex-info
+             (str "cljs.react.sx: keyframes-name takes the value returned by "
+                  "`keyframes`, not a frames map or a name. Got "
+                  (pr-str kf) ".")
+             {:type ::not-keyframes :got kf})))
+  ;; Re-bound hinted only AFTER the check: hinting the parameter would let the
+  ;; field reads compile as direct property access on whatever was passed,
+  ;; which is the crash this guard exists to replace.
+  (let [^Keyframes kf kf
+        g  @generation]
     (when-not (== g (.-gen kf))
       (set! (.-gen kf) g)
       (set! (.-nm kf) nil))
@@ -303,10 +325,17 @@
           (set! (.-nm kf) nm)
           nm))))
 
+(defn- sx-key-name
+  "The name of an sx key, or nil for anything that is not one. Delegates to
+  `sxc/key-name` so this namespace cannot drift from the compiler about what a
+  key is — it previously excluded symbols, which `key-name` accepts."
+  [k]
+  (when (or (keyword? k) (string? k) (symbol? k))
+    (sxc/key-name k)))
+
 (defn- keyframes-value!
   [prop kf]
-  (if (and (or (keyword? prop) (string? prop))
-           (= "animation-name" (theme/kebab prop)))
+  (if (= "animation-name" (some-> (sx-key-name prop) theme/kebab))
     (ensure-keyframes! kf)
     (throw (ex-info
              (str "cljs.react.sx: keyframes are only meaningful under "
@@ -315,10 +344,12 @@
                   " the parser silently discards.")
              {:type ::keyframes-not-animation-name :prop prop}))))
 
-(defn- prefixed?
-  [k c]
-  (and (or (keyword? k) (string? k))
-       (str/starts-with? (if (string? k) k (name k)) c)))
+(defn- nested-key?
+  "True for a `&` selector key or an `@` at-rule key — the two shapes that open
+  a new rule, and so clear the enclosing property rather than becoming one."
+  [k]
+  (when-let [ks (sx-key-name k)]
+    (or (str/starts-with? ks "&") (str/starts-with? ks "@"))))
 
 (defn- resolve-keyframes
   "Substitute Keyframes values for their registered names.
@@ -333,8 +364,7 @@
       (assoc m k
              (cond
                (map? v) (resolve-keyframes
-                          v (when-not (or (prefixed? k "&") (prefixed? k "@"))
-                              (or prop k)))
+                          v (when-not (nested-key? k) (or prop k)))
                (instance? Keyframes v) (keyframes-value! (or prop k) v)
                :else v)))
     {} sx))

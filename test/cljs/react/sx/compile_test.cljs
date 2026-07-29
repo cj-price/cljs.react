@@ -245,7 +245,22 @@
   (testing "ordinary keyword values still compile"
     (is (= ".c{display:flex}" (css1 {:display :flex})))
     (is (= ".c{color:var(--cx-palette-primary-main)}"
-           (css1 {:color :palette.primary.main})))))
+           (css1 {:color :palette.primary.main}))))
+
+  (testing "a value that escapes by consuming forward, not by emitting a brace"
+    ;; None of these contains a rejected character, and none makes insertRule
+    ;; throw — the parser ACCEPTS the rule and silently drops what follows.
+    ;; A trailing backslash escapes the `}` this library appends; an unbalanced
+    ;; `(` opens a block that runs to EOF; an escaped quote leaves the string
+    ;; unterminated while keeping the quote COUNT even, which is all the old
+    ;; check measured. A stray `)` or `]` closes a construct it never opened.
+    (doseq [v ["red\\" "rgb(" "\"a\\\"" "red)" "a]" "url(a.png"]]
+      (is (= :cljs.react.sx.compile/unsafe-value (ex-type {:color v}))
+          (pr-str v))))
+
+  (testing "balanced delimiters, including escapes inside strings, still pass"
+    (doseq [v ["rgb(1, 2, 3)" "calc(var(--x) * 2)" "\"a(b\"" "attr(data-x)"]]
+      (is (string? (css1 {:color v})) (pr-str v)))))
 
 (deftest non-scalar-values-test
   (testing "a value that is not nil/keyword/number/string is rejected"
@@ -273,6 +288,15 @@
     (doseq [k ["&:hover" "& .child" "&::before" "&>div" "&:not(.x)"
                "&[disabled]" "& + &"]]
       (is (nil? (ex-type {k {:margin 0}})) (pr-str k))))
+
+  (testing "a selector that opens a delimiter it never closes is rejected"
+    ;; The charset admits ( ) [ ] with no pairing requirement, so `&:has(.a`
+    ;; emitted `.c:has(.a{margin:0}` — one unclosed function that swallows
+    ;; every rule appended after it on the dev text-node path, where nothing
+    ;; re-parses. insertRule rejects it, so this failed in dev only.
+    (doseq [k ["&:has(.a" "&[data-x" "&)" "&(" "&]" "&:not(.x))"]]
+      (is (= :cljs.react.sx.compile/invalid-selector (ex-type {k {:margin 0}}))
+          (pr-str k))))
 
   (testing "at-rule keys are an allowlist, not a passthrough"
     (is (nil? (ex-type {"@media print" {:color "red"}})))

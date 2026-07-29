@@ -501,3 +501,61 @@
             nm (get (parsed-decls c) "animation-name")]
         (is (str/includes? (sheet-text) (str "@keyframes " nm "{")))
         (is (contains? (kf-rules) nm))))))
+
+(deftest keyframes-symbol-key-test
+  ;; `key-name` documents symbol support and every other part of the dialect
+  ;; honours it, but the keyframes walk decided for itself what an sx key was
+  ;; and left symbols out. The nested case was the worse half: `'&:hover` was
+  ;; not recognised as opening a rule, so it was carried down AS THE PROPERTY
+  ;; and the error blamed `&:hover` for not being `animation-name`.
+  (testing "a symbol key behaves exactly as the keyword spelling does"
+    (let [kf (sheet/keyframes fade)]
+      (is (= (cls-for {:animation-name kf})
+             (cls-for {'animation-name kf})))
+      (is (= (cls-for {:&:hover {:animation-name kf}})
+             (cls-for {'&:hover {:animation-name kf}})))))
+
+  (testing "symbols are still refused where keywords are"
+    (let [kf (sheet/keyframes fade)
+          e  (try (cls-for {'color kf}) nil (catch :default e e))]
+      (is (= :cljs.react.sx.sheet/keyframes-not-animation-name
+             (:type (ex-data e)))))))
+
+(deftest keyframes-name-guard-test
+  ;; Passing the frames map is the likeliest misuse — the docs spend a
+  ;; paragraph on object-versus-name — and it used to reach `.-body` and die on
+  ;; a raw TypeError from library internals, after mutating the caller's value.
+  (testing "a non-Keyframes argument gets a named library error"
+    (doseq [x [fade nil "cx-kf-abc" 42]]
+      (let [e (try (sheet/ensure-keyframes! x) nil (catch :default e e))]
+        (is (some? e) (pr-str x))
+        (is (= :cljs.react.sx.sheet/not-keyframes (:type (ex-data e)))
+            (pr-str x)))))
+
+  (testing "the frames map is not mutated on the way to the error"
+    (is (nil? (.-gen fade)))))
+
+(deftest intern-records-only-after-insertion-test
+  ;; The dedupe invariant is "a class handed back a second time provably has
+  ;; its rules in the document". Recording before running on-new inverted it:
+  ;; a callback that threw left the class interned as complete, every later
+  ;; call matched the content probe and returned it without re-running on-new,
+  ;; and nothing ever retried.
+  (testing "a throwing on-new interns nothing, and the next call retries"
+    (let [calls (atom 0)
+          boom  (fn [_] (swap! calls inc) (throw (js/Error. "insert failed")))]
+      (is (thrown? js/Error
+                   (sheet/intern-class! "cx-" "BODY" "h1" boom)))
+      (is (= 1 @calls))
+      ;; Same content again: if the first attempt had been recorded, this
+      ;; would return the class silently and leave on-new uncalled forever.
+      (is (thrown? js/Error
+                   (sheet/intern-class! "cx-" "BODY" "h1" boom)))
+      (is (= 2 @calls) "the second call must retry, not hit a poisoned entry")
+      ;; And once it succeeds, normal dedupe resumes.
+      (let [ok (atom 0)]
+        (is (= "cx-h1" (sheet/intern-class! "cx-" "BODY" "h1"
+                                            (fn [_] (swap! ok inc)))))
+        (is (= "cx-h1" (sheet/intern-class! "cx-" "BODY" "h1"
+                                            (fn [_] (swap! ok inc)))))
+        (is (= 1 @ok) "a warm hit must not re-run on-new")))))

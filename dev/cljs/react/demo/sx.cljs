@@ -5,7 +5,7 @@
             ;; regenerates no CSS. Application code never needs this.
             [cljs.react.sx.sheet :as sheet]
             [cljs.react.demo.ui :refer [CodeAndOutput Btn Row Stack
-                                        SectionTitle DemoTitle Caption Muted]]
+                                        SectionTitle DemoTitle Caption Muted calm]]
             [cljs.react.demo.util :refer [Div Button Section Span Strong]])
   (:require-macros [cljs.react.core :refer [defnc]]
                    [cljs.react.sx :refer [defstyle]]))
@@ -225,20 +225,20 @@
   []
   (Stack {:gap 2}
     (Row {:gap 2}
-      (Div {:className (use-sx {:width "2rem" :height "2rem" :border-radius 1
+      (Div {:className (use-sx [{:width "2rem" :height "2rem" :border-radius 1
                                 :bgcolor :palette.primary.main
                                 :animation-name swing
                                 :animation-duration "1600ms"
                                 :animation-timing-function :ease-in-out
-                                :animation-iteration-count :infinite})})
-      (Div {:className (use-sx {:px 2 :py 1 :border-radius 1
+                                :animation-iteration-count :infinite} calm])})
+      (Div {:className (use-sx [{:px 2 :py 1 :border-radius 1
                                 :bgcolor :palette.background.paper
                                 :border "1px solid" :border-color :palette.divider
                                 :font-size "0.8125rem"
                                 :animation-name glow
                                 :animation-duration "2200ms"
                                 :animation-timing-function :ease-in-out
-                                :animation-iteration-count :infinite})}
+                                :animation-iteration-count :infinite} calm])}
         "content-addressed @keyframes"))
     (Caption {}
       "Identical frames share one rule, and the generated name is a hash of the "
