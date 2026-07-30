@@ -36,21 +36,25 @@ test/cljs/react/        # Tests (cljs.test + React Testing Library)
 public/index.html       # Demo entry point (port 9011)
 shadow-cljs.edn         # Build targets: :demo :test :benchmark :release-demo
 bb.edn                  # Babashka task runner
-shell.nix               # Nix dev environment (Node 22, Clojure, bb, JDK 17)
+devenv.nix              # Dev environment (Node 22, pnpm 10, Clojure, bb, JDK 25)
+devenv.yaml             # nixpkgs input (devenv-nixpkgs/rolling)
+devenv.lock             # Pinned inputs — committed
 ```
 
-## Nix Shell Rule
+## Devenv Rule
 
-Always run commands inside `nix-shell --run '...'` — enforced by global CLAUDE.md.
+The environment is devenv, loaded by direnv via `.envrc` (`use devenv`). Run
+every command through `project-exec <project root> <command>` — enforced by
+global CLAUDE.md. Devenv tools are not on a raw PATH.
 
 ## Common Commands
 
 ```bash
-nix-shell --run 'bb dev'             # Start dev server → http://localhost:9011
-nix-shell --run 'bb test'            # Run tests
-nix-shell --run 'bb lint'            # Lint with clj-kondo
-nix-shell --run 'bb bench'           # Run benchmarks
-nix-shell --run 'bb bench-baseline'  # Save baseline
+project-exec . bb dev             # Start dev server → http://localhost:9011
+project-exec . bb test            # Run tests
+project-exec . bb lint            # Lint with clj-kondo
+project-exec . bb bench           # Run benchmarks
+project-exec . bb bench-baseline  # Save baseline
 ```
 
 ## Key APIs
@@ -149,7 +153,7 @@ kebab-case.
 
 ## Benchmarks
 
-Always run `nix-shell --run 'bb bench'` after touching any of:
+Always run `project-exec . bb bench` after touching any of:
 
 - `src/cljs/react/component.cljs` (props conversion, element creation, memo)
 - `src/cljs/react/db.cljs` (Cursor, DB context)

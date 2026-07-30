@@ -25,10 +25,19 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v27
         with:
-          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            accept-flake-config = true
 
       - name: Cache Nix store
         uses: DeterminateSystems/magic-nix-cache-action@v8
+
+      - name: Use the devenv binary cache
+        uses: cachix/cachix-action@v15
+        with:
+          name: devenv
+
+      - name: Install devenv
+        run: nix profile install nixpkgs#devenv
 
       - name: Cache Maven (.m2)
         uses: actions/cache@v4
@@ -47,9 +56,9 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Install JS deps
-        run: nix-shell --run 'pnpm install --frozen-lockfile'
+        run: devenv shell -- pnpm install --frozen-lockfile
 
       - name: Benchmark regression (PR head vs base)
         # Pass the PR's base commit explicitly rather than relying on HEAD~1 of
         # the synthesized merge commit.
-        run: nix-shell --run "bb bench-regression ${{ github.event.pull_request.base.sha }}"
+        run: devenv shell -- bb bench-regression ${{ github.event.pull_request.base.sha }}

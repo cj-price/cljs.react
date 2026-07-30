@@ -663,12 +663,14 @@ or a DOM element through `Element`, pass the `RefAtom` directly —
 
 ## Development
 
-Uses `nix-shell` (Node 22, Clojure, Babashka, JDK 17) and `bb` tasks:
+Uses [devenv](https://devenv.sh) (Node 22, pnpm 10, Clojure, Babashka, JDK 25)
+and `bb` tasks. With direnv installed, `direnv allow` loads the environment on
+`cd`; otherwise prefix each command with `devenv shell --`:
 
 ```bash
-nix-shell --run 'bb dev'    # watch + compile demo → http://localhost:9011
-nix-shell --run 'bb test'   # compile and run test suite
-nix-shell --run 'bb bench'  # run performance benchmarks
+bb dev    # watch + compile demo → http://localhost:9011
+bb test   # compile and run test suite
+bb bench  # run performance benchmarks
 ```
 
 Test suite uses `cljs.test` + `@testing-library/react` + `global-jsdom`; the
@@ -683,7 +685,7 @@ The `:release-demo` shadow-cljs build target compiles the demo under
 `:optimizations :advanced` as a smoke test for externs / dead-code issues:
 
 ```bash
-nix-shell --run 'npx shadow-cljs release release-demo'
+pnpm exec shadow-cljs release release-demo
 ```
 
 ## License
