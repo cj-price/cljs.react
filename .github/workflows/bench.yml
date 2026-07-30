@@ -28,9 +28,6 @@ jobs:
           extra_nix_config: |
             accept-flake-config = true
 
-      - name: Cache Nix store
-        uses: DeterminateSystems/magic-nix-cache-action@v8
-
       - name: Use the devenv binary cache
         uses: cachix/cachix-action@v15
         with:
