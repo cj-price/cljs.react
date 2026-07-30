@@ -53,17 +53,10 @@
 ;; child holding one never re-renders, however much its value changed.
 (defnc ThemeToggle
   [{:keys [dark? on-toggle]}]
-  ;; The label names the THING TOGGLED, not the action. With an action label
-  ;; ("Light") the two halves inverted: `aria-pressed` reported the state while
-  ;; the text reported what a click would do, so with dark active a screen
-  ;; reader said "Light, toggle button, pressed" — the opposite of the truth.
-  ;; The emoji is decorative and hidden, so the accessible name is stable
-  ;; across states, which is what `aria-pressed` needs to mean anything.
   (Btn {:variant :secondary :size :sm
-        :aria-pressed (str (boolean dark?))
         :onClick on-toggle}
     (Span {:aria-hidden "true"} (if dark? "☀️" "🌙"))
-    " Dark mode"))
+    (if dark? " Light mode" " Dark mode")))
 
 (defnc SiteHeader
   [{:keys [dark? on-toggle]}]
