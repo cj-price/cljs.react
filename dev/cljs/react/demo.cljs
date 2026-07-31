@@ -1,5 +1,6 @@
 (ns cljs.react.demo
-  (:require [cljs.react.core :refer [use-state use-sync-external-store]]
+  (:require [cljs.react.core :refer [use-state use-sync-external-store
+                                     Element Fragment]]
             [cljs.react.dom :as dom]
             [cljs.react.sx :as sx :refer [use-sx]]
             [cljs.react.demo.theme :as theme]
@@ -19,21 +20,30 @@
   (:require-macros [cljs.react.core :refer [defnc]]
                    [cljs.react.sx :refer [defstyle]]))
 
-;; One list, used for both the nav and the body. The body used to be an
-;; eleven-way `when` ladder sitting directly under this vector, so adding a tab
-;; meant editing three places and forgetting one was silent.
-(def sections
-  [{:id :basics     :title "Basic Components" :emoji "🧱" :view BasicsTab}
-   {:id :state      :title "State Management" :emoji "📊" :view StateTab}
-   {:id :effects    :title "Side Effects"     :emoji "⚡" :view EffectsTab}
-   {:id :advanced   :title "Advanced"         :emoji "🚀" :view AdvancedTab}
-   {:id :db         :title "Global State"     :emoji "🗄️" :view DBTab}
-   {:id :forms      :title "Forms"            :emoji "📝" :view FormsTab}
-   {:id :boundaries :title "Boundaries"       :emoji "🛡️" :view BoundariesTab}
-   {:id :concurrent :title "Concurrent"       :emoji "⏱️" :view ConcurrentTab}
-   {:id :interop    :title "Interop"          :emoji "🔌" :view InteropTab}
-   {:id :mui        :title "MUI"              :emoji "🎨" :view MUITab}
-   {:id :sx         :title "Styling"          :emoji "💅" :view SXTab}])
+;; Grouped for the nav; flattened for the body. The body used to be an
+;; eleven-way `when` ladder, so adding a tab meant editing three places and
+;; forgetting one was silent. `sections` stays the single flat lookup both the
+;; body and default selection read; `groups` only adds the nav headings.
+(def groups
+  [{:title "Core"
+    :sections
+    [{:id :basics     :title "Basic Components" :emoji "🧱" :view BasicsTab}
+     {:id :state      :title "State Management" :emoji "📊" :view StateTab}
+     {:id :effects    :title "Side Effects"     :emoji "⚡" :view EffectsTab}
+     {:id :advanced   :title "Advanced"         :emoji "🚀" :view AdvancedTab}
+     {:id :boundaries :title "Boundaries"       :emoji "🛡️" :view BoundariesTab}
+     {:id :concurrent :title "Concurrent"       :emoji "⏱️" :view ConcurrentTab}]}
+   {:title "Interop"
+    :sections
+    [{:id :interop    :title "Interop"          :emoji "🔌" :view InteropTab}
+     {:id :mui        :title "MUI"              :emoji "🎨" :view MUITab}]}
+   {:title "Extras"
+    :sections
+    [{:id :db         :title "Global State"     :emoji "🗄️" :view DBTab}
+     {:id :forms      :title "Forms"            :emoji "📝" :view FormsTab}
+     {:id :sx         :title "Styling"          :emoji "💅" :view SXTab}]}])
+
+(def sections (into [] (mapcat :sections) groups))
 
 ;; ---------------------------------------------------------------------------
 
@@ -208,25 +218,36 @@
    :box-shadow 1
    :&:hover {:color :palette.primary.contrast-text}})
 
+(defstyle nav-group-label
+  {:px 1.5 :pt 2 :pb 0.5
+   :font-size "0.6875rem" :font-weight 700 :letter-spacing "0.08em"
+   :text-transform :uppercase :color :palette.text.secondary
+   ;; First heading sits flush with the nav's own top padding.
+   :&:first-of-type {:pt 0.5}})
+
 (defnc SiteNav
   [{:keys [selected on-select open]}]
-  ;; Both classes are computed HERE, not in the loop below. `for` is lazy, and
+  ;; Every class is computed HERE, not in the loops below. `for` is lazy, and
   ;; React realizes the seq after this function has already returned — a
-  ;; `use-sx` in the loop body would run with no dispatcher installed and throw
+  ;; `use-sx` in a loop body would run with no dispatcher installed and throw
   ;; "Invalid hook call".
   (let [idle-cls   (use-sx nav-link)
-        active-cls (use-sx [nav-link nav-link-active])]
+        active-cls (use-sx [nav-link nav-link-active])
+        label-cls  (use-sx nav-group-label)]
     (Nav {:className (use-sx [sidebar {:transform (if open
                                                     "translateX(0)"
                                                     "translateX(-100%)")}])
           :aria-label "Sections"}
-      (for [{:keys [id title emoji]} sections
-            :let [active? (= selected id)]]
-        (Button {:key id
-                 :aria-current (when active? "page")
-                 :onClick #(on-select id)
-                 :className (if active? active-cls idle-cls)}
-          (Span {:aria-hidden "true"} emoji) " " title)))))
+      (for [{group-title :title :keys [sections]} groups]
+        (Element {:tag Fragment :key group-title}
+          (Div {:className label-cls} group-title)
+          (for [{:keys [id title emoji]} sections
+                :let [active? (= selected id)]]
+            (Button {:key id
+                     :aria-current (when active? "page")
+                     :onClick #(on-select id)
+                     :className (if active? active-cls idle-cls)}
+              (Span {:aria-hidden "true"} emoji) " " title)))))))
 
 (defnc Backdrop
   [{:keys [on-close]}]

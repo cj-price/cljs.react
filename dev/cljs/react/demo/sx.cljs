@@ -36,16 +36,16 @@
 ;; ============================================================================
 
 (def scale-code
-  ";; padding/margin/gap multiply the theme spacing unit
-{:p 2}          ; calc(var(--cx-spacing) * 2)
-{:width 300}    ; 300px          — plain lengths
-{:font-weight 500} ; 500         — unitless properties stay raw
-{:box-shadow 2} ; var(--cx-shadows-2)
-{:p \"1.5rem\"}   ; strings pass through verbatim
+  ";; numbers mean different things per property
+{:p 2}             ; calc(var(--cx-spacing) * 2)
+{:width 300}       ; 300px — plain length
+{:font-weight 500} ; 500 — unitless, raw
+{:box-shadow 2}    ; var(--cx-shadows-2)
+{:p \"1.5rem\"}      ; string, verbatim
 
-;; and the two the compiler REFUSES rather than emitting silently-dead CSS
-{:animation-duration 1}  ; throws — <time> has no unitless form, write \"1s\"
-{:box-shadow 0}          ; var(--cx-shadows-0), not the invalid `box-shadow:0`")
+;; the compiler refuses these (no dead CSS):
+{:animation-duration 1} ; throws — needs \"1s\"
+{:box-shadow 0}         ; var(--cx-shadows-0)")
 
 (defnc ScaleBox
   [{:keys [n]}]
@@ -75,20 +75,10 @@
                         :palette {:primary {:main colour}}}}
   ...)
 
-;; Changing the theme rewrites the :root --cx-* block and nothing else.
-;; Not one style rule is regenerated and every component keeps the class it
-;; already had — every generated class references var(--cx-…) rather than a
-;; baked value, so the compile counter below never moves. Components that
-;; read the theme DO re-render (they are context subscribers), but that
-;; render is a memo hit returning the same class and mutating no DOM.
-;;
-;; This page's light/dark switch is exactly that: one root provider, one
-;; rewritten :root block, zero regenerated rules.
-;;
-;; (The provider below is NESTED inside the site's root one, so it also
-;;  registers one .cx-theme-* rule per DISTINCT theme it is given — those
-;;  variables have to be baked into a class. That is a var block, not a
-;;  restyle: the compile counter still does not move.)")
+;; A theme swap rewrites the :root --cx-* block
+;; and regenerates no style rules — every class
+;; references var(--cx-…), so the compile counter
+;; below never moves.")
 
 (defnc ThemedBox
   [{:keys [label]}]
@@ -166,12 +156,12 @@
 ;; ============================================================================
 
 (def responsive-code
-  "{:width {:xs \"100%\" :md 320}   ; :xs is the base rule, the rest are
-                                ; mobile-first min-width media blocks
- :&:hover {:box-shadow 3}      ; nested selectors need an explicit &
- \"& .tag\" {:opacity 0.6}}      ; string keys are the primary spelling
+  "{:width {:xs \"100%\" :md 320}  ; :xs base, then
+                              ; min-width media
+ :&:hover {:box-shadow 3}     ; nested needs &
+ \"& .tag\" {:opacity 0.6}}     ; string keys too
 
-;; Raw at-rules work too, for the conditions breakpoints cannot express:
+;; Raw at-rules also work, beyond breakpoints:
 \"@media (min-width: 1024px)\" {...}
 \"@supports (display: grid)\"  {...}")
 
@@ -199,18 +189,17 @@
   (sx/keyframes {:from {:transform \"rotate(0deg)\"}
                  :to   {:transform \"rotate(360deg)\"}}))
 
-;; Pass the OBJECT, not its name. The name is derived on every compile,
-;; which is what keeps it correct across hot reload — a name captured into
-;; a map outlives the rule it names, silently.
+;; Pass the OBJECT, not its name — it is
+;; re-derived each compile, so it survives
+;; hot reload.
 (use-sx {:animation-name spin
          :animation-duration \"900ms\"
          :animation-timing-function :linear
          :animation-iteration-count :infinite})
 
-;; Offsets: :from, :to, a number 0-100, or \"33.3%\".
-;; A vector key shares one block: {[0 100] {:opacity 1} 50 {:opacity 0.3}}
-;; Frames are ordinary sx maps — shorthands, the spacing scale and theme
-;; tokens all work inside one.")
+;; Offsets: :from, :to, 0-100, or \"33.3%\".
+;; A vector key shares one block.
+;; Frames are ordinary sx maps.")
 
 (def swing
   (sx/keyframes {0   {:transform "translateX(0)"}
@@ -262,11 +251,12 @@
   "(defstyle card-style
   {:p 2 :border-radius 1 :box-shadow 1 ...})
 
-;; A var is a stable identity, so use-sx's deps compare by `identical?`
-;; instead of walking the map — and repeated mounts skip the cache probe.
+;; A var has stable identity — use-sx compares
+;; deps by identical?, skipping the map walk.
 (use-sx card-style)
 
-;; Vectors deep-merge right-wins into ONE class. nils are dropped.
+;; Vectors deep-merge, right wins → one class.
+;; nils are dropped.
 (use-sx [card-style (when selected? {:bgcolor :palette.primary.main})])")
 
 (defnc SelectableCard
@@ -303,16 +293,15 @@
 ;; ============================================================================
 
 (def scoped-code
-  "(ThemeProvider {}                              ; root: no DOM node
+  "(ThemeProvider {}                  ; root: no DOM
   (ThemedBox {:label \"page theme\"})
-  (ThemeProvider {:theme violet}                ; nested: scoped class on a
-    (ThemedBox {:label \"scoped theme\"})))        ; display:contents wrapper
+  (ThemeProvider {:theme violet}   ; nested scope
+    (ThemedBox {:label \"scoped\"})))
 
-;; A nested provider emits .cx-theme-<hash> rather than rewriting :root,
-;; so a dark panel inside a light page works. Exactly one root provider may
-;; be mounted — a second would overwrite the first's :root variables, and
-;; the library dev-warns when that happens. This whole tab is already inside
-;; the site's root provider, so every provider here is a nested one.")
+;; A nested provider emits .cx-theme-<hash>
+;; instead of rewriting :root, so a scoped panel
+;; works. Only one root provider may mount; this
+;; tab is inside the site's, so all here nest.")
 
 (defnc ScopedDemo
   []
@@ -333,14 +322,13 @@
   "(BaselineProvider {:body? true :enable-color-scheme? true}
   (App))
 
-;; This demo DOES mount it, once, at the app root — it is what gives the
-;; page its box-sizing reset, its themed body background and the native
-;; control colours that follow the dark toggle.
+;; Mounted once here at the app root: box-sizing
+;; reset, themed body background, and native
+;; controls that follow the dark toggle.
 ;;
-;; NOTE: this is GLOBAL CSS. Its selectors are element-level (a, img,
-;; button) and the sheet is append-only with no unmount cleanup, so mounting
-;; it anywhere styles the whole document for the rest of the session. Mount
-;; it once at your app root, or not at all — there is no scoped baseline.")
+;; NOTE: GLOBAL CSS. Element-level selectors, an
+;; append-only sheet with no cleanup — mount it
+;; once at the app root, or not at all.")
 
 ;; ============================================================================
 ;; Tab

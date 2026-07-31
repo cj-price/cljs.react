@@ -219,7 +219,7 @@
 
     (CodeAndOutput
      {:title "useRef — Persist Across Renders"
-      :code ";; use-ref is any mutable slot that persists across renders without causing them.\n\n(defnc PreviousValue\n  []\n  (let [value    (use-state \"\")\n        prev-ref (use-ref \"\")\n        current  @value]\n    ;; After each render, stash current as previous\n    (use-effect\n      (fn []\n        (reset! prev-ref current)\n        js/undefined)\n      [current])\n    (Div\n      (Input {:value current\n              :onChange #(reset! value\n                          (-> % .-target .-value))})\n      (P \"Previous: \" @prev-ref)\n      (P \"Current: \"  current))))"}
+      :code ";; use-ref: a mutable slot that survives renders.\n\n(defnc PreviousValue\n  []\n  (let [value    (use-state \"\")\n        prev-ref (use-ref \"\")\n        current  @value]\n    ;; After render, stash current as previous\n    (use-effect\n      (fn []\n        (reset! prev-ref current)\n        js/undefined)\n      [current])\n    (Div\n      (Input {:value current\n              :onChange #(reset! value\n                          (-> % .-target .-value))})\n      (P \"Previous: \" @prev-ref)\n      (P \"Current: \"  current))))"}
      (RefDemo))
 
     (CodeAndOutput

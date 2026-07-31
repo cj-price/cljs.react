@@ -305,7 +305,7 @@
 
     (CodeAndOutput
      {:title "Checkboxes & Radio Buttons"
-      :code ";; Radio — use-field, reads e.target.value\n(let [plan-fp (use-field f :plan)]\n  (FormRadioGroup\n    (assoc plan-fp :label \"Plan\"\n      :options [{:value \"free\"  :label \"Free\"}\n                {:value \"pro\"   :label \"Pro\"}\n                {:value \"ent\"   :label \"Enterprise\"}])))\n\n;; Checkbox — use-field with {:checkbox? true}\n(let [terms-fp (use-field f :terms {:checkbox? true})]\n  (FormCheckboxInput\n    (assoc terms-fp :label \"Accept terms\")))"}
+      :code ";; Radio — use-field reads e.target.value\n(let [plan-fp (use-field f :plan)]\n  (FormRadioGroup\n    (assoc plan-fp :label \"Plan\"\n      :options [{:value \"free\"  :label \"Free\"}\n                {:value \"pro\"   :label \"Pro\"}\n                {:value \"ent\"   :label \"Enterprise\"}])))\n\n;; Checkbox — use-field {:checkbox? true}\n(let [terms-fp (use-field f :terms {:checkbox? true})]\n  (FormCheckboxInput\n    (assoc terms-fp :label \"Accept terms\")))"}
      (ProfileFormDemo))
 
     (Divider {})
@@ -315,15 +315,15 @@
 
     (CodeAndOutput
      {:title "Async validation & blur mode"
-      :code ";; :validate-on :blur fires on focus loss; :validate may return a Promise.\n\n(use-form\n  {:values      {:username \"\"}\n   :validate-on :blur\n   :validate    (fn [{:keys [username]}]\n                  (js/Promise.\n                    (fn [resolve _]\n                      (js/setTimeout\n                        #(resolve (when (= username \"taken\")\n                                    {:username \"Already taken\"}))\n                        700))))})\n\n;; Sub-component subscribes independently to validating? state\n(defnc ValidatingIndicator [{:keys [f]}]\n  (let [{:keys [validating?]} (use-form-meta f)]\n    (when validating?\n      (Span \"Checking…\"))))"}
+      :code ";; :validate-on :blur; :validate may be async.\n\n(use-form\n  {:values      {:username \"\"}\n   :validate-on :blur\n   :validate    (fn [{:keys [username]}]\n                  (js/Promise.\n                    (fn [resolve _]\n                      (js/setTimeout\n                        #(resolve (when (= username \"taken\")\n                                    {:username \"Already taken\"}))\n                        700))))})\n\n;; Subscribes to validating? independently.\n(defnc ValidatingIndicator [{:keys [f]}]\n  (let [{:keys [validating?]} (use-form-meta f)]\n    (when validating?\n      (Span \"Checking…\"))))"}
      (AsyncValidationDemo))
 
     (CodeAndOutput
      {:title "Reactive defaults via watchable atom"
-      :code ";; Pass a watchable atom as :values — clean fields stay in sync; dirty fields are frozen.\n\n(let [atom-ref     (use-ref nil)\n      _            (when (nil? @atom-ref)\n                     (reset! atom-ref (atom {:first-name \"\" :email \"\"})))\n      profile-atom @atom-ref\n      f            (use-form {:values profile-atom})]\n  ;; Reset the atom → only untouched fields update\n  (Button {:onClick #(reset! profile-atom\n                       {:first-name \"Alice\"\n                        :email \"alice@example.com\"})}\n    \"Load Alice\"))"}
+      :code ";; Pass a watchable atom as :values.\n\n(let [atom-ref     (use-ref nil)\n      _            (when (nil? @atom-ref)\n                     (reset! atom-ref (atom {:first-name \"\" :email \"\"})))\n      profile-atom @atom-ref\n      f            (use-form {:values profile-atom})]\n  ;; Reset it → only untouched fields update.\n  (Button {:onClick #(reset! profile-atom\n                       {:first-name \"Alice\"\n                        :email \"alice@example.com\"})}\n    \"Load Alice\"))"}
      (ReactiveDefaultsDemo))
 
     (CodeAndOutput
      {:title "Per-field subscription isolation"
-      :code ";; Each use-field is an independent subscription — typing only re-renders that field.\n\n(defnc FieldWithCount [{:keys [f field-key label]}]\n  (let [fp      (use-field f field-key)\n        counter (use-ref 0)\n        _       (reset! counter (inc @counter))]\n    (Div\n      (Span (str \"renders: \" @counter))\n      (Input {:value    (or (:value fp) \"\")\n              :onChange (:onChange fp)\n              :onBlur   (:onBlur fp)}))))\n\n;; Typing in :first-name only re-renders that component\n(FieldWithCount {:f f :field-key :first-name :label \"First Name\"})\n(FieldWithCount {:f f :field-key :last-name  :label \"Last Name\"})"}
+      :code ";; Each use-field subscribes independently.\n\n(defnc FieldWithCount [{:keys [f field-key label]}]\n  (let [fp      (use-field f field-key)\n        counter (use-ref 0)\n        _       (reset! counter (inc @counter))]\n    (Div\n      (Span (str \"renders: \" @counter))\n      (Input {:value    (or (:value fp) \"\")\n              :onChange (:onChange fp)\n              :onBlur   (:onBlur fp)}))))\n\n;; Typing re-renders only that field.\n(FieldWithCount {:f f :field-key :first-name :label \"First Name\"})\n(FieldWithCount {:f f :field-key :last-name  :label \"Last Name\"})"}
      (SubscriptionIsolationDemo))))

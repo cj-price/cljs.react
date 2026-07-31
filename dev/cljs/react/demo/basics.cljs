@@ -227,7 +227,7 @@
 
     (CodeAndOutput
      {:title "Children Passing"
-      :code "(defnc CardWithChildren\n  [{:keys [title children]}]\n  (Card {}\n    (CardTitle {} title)\n    ;; children is a seq — spread it, or React\n    ;; reads it as a keyless list\n    (apply Element {:tag \"div\"} children)))\n\n(CardWithChildren {:title \"Card Title\"}\n  (Element {:tag \"p\"} \"Content 1\")\n  (Element {:tag \"p\"} \"Content 2\"))"}
+      :code "(defnc CardWithChildren\n  [{:keys [title children]}]\n  (Card {}\n    (CardTitle {} title)\n    ;; children is a seq — spread it\n    (apply Element {:tag \"div\"} children)))\n\n(CardWithChildren {:title \"Card Title\"}\n  (Element {:tag \"p\"} \"Content 1\")\n  (Element {:tag \"p\"} \"Content 2\"))"}
      (CardWithChildren {:title "Card Title"}
        (Element {:tag "p"} "This is the card content.")
        (Element {:tag "p"} "Multiple children are supported!")))
@@ -239,12 +239,12 @@
 
     (CodeAndOutput
      {:title "Vector of Elements as a Prop"
-      :code ";; Elements are plain CLJS data — pass them through any prop key.\n\n(defnc Breadcrumbs\n  [{:keys [items]}]\n  (Element {:tag \"nav\"}\n    (for [[idx item] (map-indexed vector items)]\n      (Element {:tag \"span\" :key idx}\n        (when (pos? idx)\n          (Element {:tag \"span\"} \"/\"))\n        item))))\n\n(Breadcrumbs\n  {:items [(BreadcrumbLink {:href \"#\"} \"Home\")\n           (BreadcrumbLink {:href \"#\"} \"Library\")\n           (BreadcrumbCurrent {} \"ClojureScript\")]})"}
+      :code ";; Elements are data — pass them via any prop.\n\n(defnc Breadcrumbs\n  [{:keys [items]}]\n  (Element {:tag \"nav\"}\n    (for [[idx item] (map-indexed vector items)]\n      (Element {:tag \"span\" :key idx}\n        (when (pos? idx)\n          (Element {:tag \"span\"} \"/\"))\n        item))))\n\n(Breadcrumbs\n  {:items [(BreadcrumbLink {:href \"#\"} \"Home\")\n           (BreadcrumbLink {:href \"#\"} \"Library\")\n           (BreadcrumbCurrent {} \"ClojureScript\")]})"}
      (VectorPropDemo))
 
     (CodeAndOutput
      {:title "Interop — Using a JS Component"
-      :code ";; Pass any JS component as :tag — keyword props become JS props.\n;; The raw component knows nothing about sx, but reads\n;; var(--cx-…) directly, so it follows the theme anyway.\n\n(Element {:tag RawBadge :label \"New\"})\n(Element {:tag RawBadge :label \"Beta\"})\n(Element {:tag RawBadge :label \"Alpha\"})"}
+      :code ";; Any JS component works as :tag.\n;; It reads var(--cx-…), so it follows the theme.\n\n(Element {:tag RawBadge :label \"New\"})\n(Element {:tag RawBadge :label \"Beta\"})\n(Element {:tag RawBadge :label \"Alpha\"})"}
      (Row {:gap 1}
        (Element {:tag RawBadge :label "New"})
        (Element {:tag RawBadge :label "Beta"})
@@ -272,5 +272,5 @@
 
     (CodeAndOutput
      {:title "Interop — Ref to a JS Component"
-      :code ";; use-ref returns a RefAtom — pass as :ref; @ref is the DOM node.\n\n(defnc FocusDemo []\n  (let [input-ref (use-ref nil)]\n    (Element {:tag \"div\"}\n      (Element {:tag RawTextBox :ref input-ref})\n      (Element {:tag \"button\"\n                :onClick #(when-let [el @input-ref]\n                            (.focus el))}\n        \"Focus\")\n      (Element {:tag \"button\"\n                :onClick #(when-let [el @input-ref]\n                            (.focus el)\n                            (.select el))}\n        \"Select all\"))))"}
+      :code ";; use-ref → RefAtom; @ref is the DOM node.\n\n(defnc FocusDemo []\n  (let [input-ref (use-ref nil)]\n    (Element {:tag \"div\"}\n      (Element {:tag RawTextBox :ref input-ref})\n      (Element {:tag \"button\"\n                :onClick #(when-let [el @input-ref]\n                            (.focus el))}\n        \"Focus\")\n      (Element {:tag \"button\"\n                :onClick #(when-let [el @input-ref]\n                            (.focus el)\n                            (.select el))}\n        \"Select all\"))))"}
      (FocusDemo))))

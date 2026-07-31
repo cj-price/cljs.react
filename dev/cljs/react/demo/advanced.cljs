@@ -107,10 +107,10 @@
 
     (CodeAndOutput
      {:title "Component Composition"
-      :code ";; A tone selects tokens; nothing builds a class\n;; name at runtime any more.\n\n(defnc UserCard\n  [{:keys [name role active]}]\n  (Card {:className\n          (use-sx [user-card\n                   (when-not active\n                     {:opacity 0.65})])}\n    (Row {:justify :space-between}\n      (Span name)\n      (Badge {:tone (role-tone role)} role))))"}
+      :code ";; A tone selects tokens — no runtime classes.\n\n(defnc UserCard\n  [{:keys [name role active]}]\n  (Card {:className\n          (use-sx [user-card\n                   (when-not active\n                     {:opacity 0.65})])}\n    (Row {:justify :space-between}\n      (Span name)\n      (Badge {:tone (role-tone role)} role))))"}
      (CompositionDemo))
 
     (CodeAndOutput
      {:title "Memoization with React.memo"
-      :code "(defnc RenderCounter\n  [{:keys [name]}]\n  (let [count (use-ref 0)]\n    (swap! count inc)\n    (Div\n      (Strong name)\n      (Span \" - Renders: \" @count))))\n\n;; defnc auto-wraps with React.memo + CLJS equality"}
+      :code "(defnc RenderCounter\n  [{:keys [name]}]\n  (let [count (use-ref 0)]\n    (swap! count inc)\n    (Div\n      (Strong name)\n      (Span \" - Renders: \" @count))))\n\n;; defnc auto-memoizes with CLJS equality"}
      (MemoizationDemo))))

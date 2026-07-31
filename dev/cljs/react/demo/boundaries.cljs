@@ -86,10 +86,10 @@
 
     (CodeAndOutput
      {:title "ErrorBoundary — catch & recover"
-      :code "(defnc Bomb [{:keys [boom?]}]\n  (when boom?\n    (throw (js/Error. \"Boom!\")))\n  (Div \"Healthy\"))\n\n(ErrorBoundary\n  {:fallback (fn [err]\n               (Div {:role \"alert\"}\n                 \"Caught: \"\n                 (ex-message err)))}\n  (Bomb {:boom? @boom?}))\n\n;; :key isn't forwarded to ErrorBoundary —\n;; remount via a keyed wrapper to reset it."}
+      :code "(defnc Bomb [{:keys [boom?]}]\n  (when boom?\n    (throw (js/Error. \"Boom!\")))\n  (Div \"Healthy\"))\n\n(ErrorBoundary\n  {:fallback (fn [err]\n               (Div {:role \"alert\"}\n                 \"Caught: \"\n                 (ex-message err)))}\n  (Bomb {:boom? @boom?}))\n\n;; :key isn't forwarded — wrap to remount."}
      (ErrorBoundaryDemo))
 
     (CodeAndOutput
      {:title "Suspense — fallback while a code-split module loads"
-      :code "(def panel\n  (lazy/loadable my.app.panel/Panel))\n\n(defnc View []\n  (let [Panel (use-lazy-loadable panel)]\n    (Element {:tag Suspense\n              :fallback (Div \"Loading…\")}\n      (Panel {:label \"hi\"}))))\n\n;; `panel` is referenced via loadable (not :require),\n;; so shadow splits it into its own chunk, fetched\n;; on demand. use-lazy-loadable returns a callable component."}
+      :code "(def panel\n  (lazy/loadable my.app.panel/Panel))\n\n(defnc View []\n  (let [Panel (use-lazy-loadable panel)]\n    (Element {:tag Suspense\n              :fallback (Div \"Loading…\")}\n      (Panel {:label \"hi\"}))))\n\n;; loadable (not :require) → its own chunk,\n;; fetched on demand under Suspense."}
      (SuspenseDemo))))
