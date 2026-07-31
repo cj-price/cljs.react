@@ -6,7 +6,7 @@
    :output-dir "public/js"
    :asset-path "/js"
    :module-loader true
-   :modules {:main {:init-fn cljs.react.demo/init}
+   :modules {:main {:init-fn demo-main/init}
              :lazy-panel {:entries [cljs.react.demo.lazy-panel]
                           :depends-on #{:main}}}
    :devtools {:http-root "public"
@@ -34,7 +34,7 @@
    :output-dir "target/release-demo/js"
    :asset-path "js"
    :module-loader true
-   :modules {:main {:init-fn cljs.react.demo/init}
+   :modules {:main {:init-fn demo-main/init}
              :lazy-panel {:entries [cljs.react.demo.lazy-panel]
                           :depends-on #{:main}}}
    :compiler-options {:optimizations :advanced

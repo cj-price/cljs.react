@@ -1,7 +1,6 @@
 (ns cljs.react.demo
   (:require [cljs.react.core :refer [use-state use-sync-external-store
                                      Element Fragment]]
-            [cljs.react.dom :as dom]
             [cljs.react.sx :as sx :refer [use-sx]]
             [cljs.react.demo.theme :as theme]
             [cljs.react.demo.basics :refer [BasicsTab]]
@@ -39,9 +38,12 @@
      {:id :mui        :title "MUI"              :emoji "🎨" :view MUITab}]}
    {:title "Extras"
     :sections
-    [{:id :db         :title "Global State"     :emoji "🗄️" :view DBTab}
-     {:id :forms      :title "Forms"            :emoji "📝" :view FormsTab}
-     {:id :sx         :title "Styling"          :emoji "💅" :view SXTab}]}])
+    [{:id :db         :title "Global State"     :emoji "🗄️" :view DBTab
+      :experimental true}
+     {:id :forms      :title "Forms"            :emoji "📝" :view FormsTab
+      :experimental true}
+     {:id :sx         :title "Styling"          :emoji "💅" :view SXTab
+      :experimental true}]}])
 
 (def sections (into [] (mapcat :sections) groups))
 
@@ -218,6 +220,15 @@
    :box-shadow 1
    :&:hover {:color :palette.primary.contrast-text}})
 
+(defstyle nav-badge
+  {:display :inline-flex :align-items :center :justify-content :center
+   :margin-left :auto :flex-shrink 0
+   :px 0.75 :height "1.125rem" :border-radius "999px"
+   :font-size "0.5625rem" :font-weight 700 :letter-spacing "0.07em"
+   :text-transform :uppercase :line-height 1
+   :bgcolor :palette.warning.main :color :palette.warning.contrast-text
+   :box-shadow 1})
+
 (defstyle nav-group-label
   {:px 1.5 :pt 2 :pb 0.5
    :font-size "0.6875rem" :font-weight 700 :letter-spacing "0.08em"
@@ -233,7 +244,8 @@
   ;; "Invalid hook call".
   (let [idle-cls   (use-sx nav-link)
         active-cls (use-sx [nav-link nav-link-active])
-        label-cls  (use-sx nav-group-label)]
+        label-cls  (use-sx nav-group-label)
+        badge-cls  (use-sx nav-badge)]
     (Nav {:className (use-sx [sidebar {:transform (if open
                                                     "translateX(0)"
                                                     "translateX(-100%)")}])
@@ -241,13 +253,15 @@
       (for [{group-title :title :keys [sections]} groups]
         (Element {:tag Fragment :key group-title}
           (Div {:className label-cls} group-title)
-          (for [{:keys [id title emoji]} sections
+          (for [{:keys [id title emoji experimental]} sections
                 :let [active? (= selected id)]]
             (Button {:key id
                      :aria-current (when active? "page")
                      :onClick #(on-select id)
                      :className (if active? active-cls idle-cls)}
-              (Span {:aria-hidden "true"} emoji) " " title)))))))
+              (Span {:aria-hidden "true"} emoji) " " title
+              (when experimental
+                (Span {:className badge-cls} "Experimental")))))))))
 
 (defnc Backdrop
   [{:keys [on-close]}]
@@ -299,16 +313,3 @@
              :on-open   #(reset! open true)
              :on-close  #(reset! open false)}))))
 
-(defonce root (atom nil))
-
-(defn ^:dev/after-load reload []
-  (when @root
-    (dom/render @root (App {}))))
-
-(defn ^:export init
-  "Initialize the React application using React 18+ createRoot API"
-  []
-  (set! (.. js/document -documentElement -style -overflowY) "scroll")
-  (when-let [root-el (.getElementById js/document "app")]
-    (reset! root (dom/create-root root-el))
-    (dom/render @root (App {}))))
