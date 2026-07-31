@@ -7,9 +7,9 @@
   merges with the base's instead of clobbering it."
   (:require ["prismjs" :as Prism]
             ["prismjs/components/prism-clojure"]
-            [cljs.react.core :refer [Element]]
+            [cljs.react.core :refer [Element use-state]]
             [cljs.react.sx :as sx :refer [use-sx]]
-            [cljs.react.demo.util :refer [Div Span Pre Code]])
+            [cljs.react.demo.util :refer [Div Span Pre Code Button]])
   (:require-macros [cljs.react.core :refer [defnc]]
                    [cljs.react.sx :refer [defstyle]]))
 
@@ -497,21 +497,60 @@
 
 (defstyle demo-columns
   {:display :grid :gap 2 :align-items :stretch
-   :grid-template-columns "minmax(0, 1fr)"
-   ;; A raw at-rule rather than the `:lg` breakpoint: the code pane needs about
-   ;; 1024px before two columns beat one, which is not where `:lg` sits.
-   "@media (min-width: 1024px)"
-   {:grid-template-columns "minmax(0, 1fr) minmax(0, 1fr)"}})
+   ;; Below `:lg` a single column shows one pane at a time, chosen by the
+   ;; Code|Result toggle; at `:lg` the two panes sit side by side.
+   :grid-template-columns {:xs "minmax(0, 1fr)"
+                           :lg "minmax(0, 1fr) minmax(0, 1fr)"}})
+
+;; The Code|Result toggle, mirroring the header's theme switch. Shown only below
+;; `:lg`; at `:lg` both panes are visible so it hides.
+(defstyle seg-group
+  {:display :inline-flex :align-items :center :gap 0.25
+   :p 0.25 :mb 1.5 :border-radius 1.25
+   :bgcolor :palette.background.paper
+   :border "1px solid" :border-color :palette.divider})
+
+(defstyle seg-option
+  {:display :inline-flex :align-items :center :gap 0.5
+   :px 1.5 :py 0.5 :border-radius 1
+   :border "1px solid transparent"
+   :font-family :inherit :font-size "0.8125rem" :font-weight 500
+   :cursor :pointer :bgcolor :transparent :color :palette.text.secondary
+   :transition "background-color 140ms ease, color 140ms ease"
+   :&:hover {:color :palette.text.primary}
+   :&:focus-visible {:outline "2px solid" :outline-color :palette.primary.main
+                     :outline-offset "2px"}})
+
+(def ^:private seg-option-active
+  {:bgcolor :palette.primary.main :color :palette.primary.contrast-text
+   :box-shadow 1
+   :&:hover {:color :palette.primary.contrast-text}})
 
 (defnc CodeAndOutput
   [{:keys [code title children]}]
-  (Div {:className (use-sx demo-block)}
-    (when title (DemoTitle {} title))
-    (Div {:className (use-sx demo-columns)}
-      (Div
-        (Pre {:className (use-sx code-block)}
-          (Code {:dangerouslySetInnerHTML
-                 {:__html (.highlight Prism code
-                            (.-clojure (.-languages Prism))
-                            "clojure")}})))
-      (Div {:className (use-sx output-pane)} children))))
+  (let [view       (use-state :code)
+        idle-cls   (use-sx seg-option)
+        active-cls (use-sx [seg-option seg-option-active])
+        code?      (= @view :code)]
+    (Div {:className (use-sx demo-block)}
+      (when title (DemoTitle {} title))
+      (Div {:className (use-sx [seg-group {:display {:xs :inline-flex :lg :none}}])
+            :role "group" :aria-label "Show code or result"}
+        (Button {:type "button" :aria-pressed (if code? "true" "false")
+                 :onClick #(reset! view :code)
+                 :className (if code? active-cls idle-cls)}
+          "Code")
+        (Button {:type "button" :aria-pressed (if code? "false" "true")
+                 :onClick #(reset! view :result)
+                 :className (if code? idle-cls active-cls)}
+          "Result"))
+      (Div {:className (use-sx demo-columns)}
+        (Div {:className (use-sx {:display {:xs (if code? :block :none) :lg :block}})}
+          (Pre {:className (use-sx code-block)}
+            (Code {:dangerouslySetInnerHTML
+                   {:__html (.highlight Prism code
+                              (.-clojure (.-languages Prism))
+                              "clojure")}})))
+        (Div {:className (use-sx [output-pane
+                                  {:display {:xs (if code? :none :flex) :lg :flex}}])}
+          children)))))
