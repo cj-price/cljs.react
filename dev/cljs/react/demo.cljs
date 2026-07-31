@@ -1,9 +1,8 @@
 (ns cljs.react.demo
-  (:require [cljs.react.core :refer [use-state]]
+  (:require [cljs.react.core :refer [use-state use-sync-external-store]]
             [cljs.react.dom :as dom]
             [cljs.react.sx :as sx :refer [use-sx]]
             [cljs.react.demo.theme :as theme]
-            [cljs.react.demo.ui :as ui :refer [Btn]]
             [cljs.react.demo.basics :refer [BasicsTab]]
             [cljs.react.demo.state :refer [StateTab]]
             [cljs.react.demo.effects :refer [EffectsTab]]
@@ -47,19 +46,99 @@
    :backdrop-filter "blur(12px)"
    :border-bottom "1px solid" :border-color :palette.divider})
 
-;; These take VALUES and callbacks, never the StateAtom itself. `defnc`
-;; memoizes with CLJS `=`, and a StateAtom keys equality on its shared
-;; underlying object — so an atom prop is `=` on every render and a memoized
-;; child holding one never re-renders, however much its value changed.
-(defnc ThemeToggle
-  [{:keys [dark? on-toggle]}]
-  (Btn {:variant :secondary :size :sm
-        :onClick on-toggle}
-    (Span {:aria-hidden "true"} (if dark? "☀️" "🌙"))
-    (if dark? " Light mode" " Dark mode")))
+(def ^:private dark-media
+  (when (exists? js/window)
+    (.matchMedia js/window "(prefers-color-scheme: dark)")))
+
+(defn- subscribe-scheme
+  [callback]
+  (if dark-media
+    (do (.addEventListener dark-media "change" callback)
+        #(.removeEventListener dark-media "change" callback))
+    (fn [])))
+
+(defn- system-dark?
+  []
+  (boolean (and dark-media (.-matches dark-media))))
+
+(defn- use-system-dark?
+  []
+  (use-sync-external-store subscribe-scheme system-dark?))
+
+(defn- resolve-dark?
+  [pref system-dark?]
+  (case pref
+    :dark   true
+    :light  false
+    :system system-dark?))
+
+(def ^:private theme-options
+  [{:value :light  :icon "☀️" :label "Light"}
+   {:value :dark   :icon "🌙" :label "Dark"}
+   {:value :system :icon "🖥️" :label "System"}])
+
+(def ^:private pref-storage-key "cljs-react-demo.theme-pref")
+
+(def ^:private pref-values (into #{} (map :value) theme-options))
+
+(defn- load-pref
+  []
+  (or (try
+        (some-> (.-localStorage js/window)
+                (.getItem pref-storage-key)
+                keyword
+                pref-values)
+        (catch :default _ nil))
+      :system))
+
+(defn- store-pref!
+  [pref]
+  (try
+    (some-> (.-localStorage js/window)
+            (.setItem pref-storage-key (name pref)))
+    (catch :default _ nil)))
+
+(defstyle switch-group
+  {:display :inline-flex :align-items :center :gap 0.25
+   :p 0.25 :border-radius 1.25
+   :bgcolor :palette.background.paper
+   :border "1px solid" :border-color :palette.divider})
+
+(defstyle switch-option
+  {:display :inline-flex :align-items :center :gap 0.5
+   :px 1.25 :py 0.75 :border-radius 1
+   :border "1px solid transparent"
+   :font-family :inherit :font-size "0.8125rem" :font-weight 500
+   :cursor :pointer :bgcolor :transparent
+   :color :palette.text.secondary
+   :transition "background-color 140ms ease, color 140ms ease, box-shadow 140ms ease"
+   :&:hover {:color :palette.text.primary}
+   :&:focus-visible {:outline "2px solid"
+                     :outline-color :palette.primary.main
+                     :outline-offset "2px"}})
+
+(def ^:private switch-option-active
+  {:bgcolor :palette.primary.main
+   :color :palette.primary.contrast-text
+   :box-shadow 1
+   :&:hover {:color :palette.primary.contrast-text}})
+
+(defnc ThemeSwitch
+  [{:keys [pref on-pref]}]
+  (let [idle   (use-sx switch-option)
+        active (use-sx [switch-option switch-option-active])]
+    (Div {:className (use-sx switch-group)
+          :role "group" :aria-label "Colour theme"}
+      (for [{:keys [value icon label]} theme-options
+            :let [selected? (= pref value)]]
+        (Button {:key value
+                 :aria-pressed (if selected? "true" "false")
+                 :onClick #(on-pref value)
+                 :className (if selected? active idle)}
+          (Span {:aria-hidden "true"} icon) label)))))
 
 (defnc SiteHeader
-  [{:keys [dark? on-toggle]}]
+  [{:keys [pref on-pref]}]
   (Header {:className (use-sx [bar {:position :static}])}
     (Div {:className (use-sx [container {:display :flex :gap 2
                                          :align-items :center
@@ -71,7 +150,7 @@
                                  :color :palette.text.primary})}
           (Span {:className (use-sx {:color :palette.primary.main})} "cljs.react")
           " demo"))
-      (ThemeToggle {:dark? dark? :on-toggle on-toggle}))))
+      (ThemeSwitch {:pref pref :on-pref on-pref}))))
 
 (defstyle tab-button
   {:display :inline-flex :align-items :center :gap 0.75
@@ -115,7 +194,7 @@
             emoji " " title))))))
 
 (defnc Page
-  [{:keys [dark? on-toggle selected on-select]}]
+  [{:keys [pref on-pref selected on-select]}]
   (let [{:keys [view]} (first (filter #(= selected (:id %)) sections))]
     (Div {:className (use-sx {:min-height "100vh"
                               :display :flex :flex-direction :column
@@ -128,21 +207,22 @@
                                    (sx/theme-var :palette.dot)
                                    " 1px, transparent 1px)")
                               :background-size "32px 32px"})}
-      (SiteHeader {:dark? dark? :on-toggle on-toggle})
+      (SiteHeader {:pref pref :on-pref on-pref})
       (SiteNav {:selected selected :on-select on-select})
       (Main {:className (use-sx [container {:flex 1 :py 4}])}
         (view {})))))
 
 (defnc App
   []
-  (let [dark?    (use-state false)
-        selected (use-state :basics)]
+  (let [pref     (use-state (load-pref))
+        selected (use-state :basics)
+        dark?    (resolve-dark? @pref (use-system-dark?))]
     ;; Root ThemeProvider renders no DOM node, so the page surface below is a
     ;; child: it has to read the theme this provider installs, not the default.
-    (sx/ThemeProvider {:theme (theme/for-mode @dark?)}
+    (sx/ThemeProvider {:theme (theme/for-mode dark?)}
       (sx/BaselineProvider {:body? true :enable-color-scheme? true})
-      (Page {:dark?     @dark?
-             :on-toggle #(swap! dark? not)
+      (Page {:pref      @pref
+             :on-pref   #(do (store-pref! %) (reset! pref %))
              :selected  @selected
              :on-select #(reset! selected %)}))))
 
