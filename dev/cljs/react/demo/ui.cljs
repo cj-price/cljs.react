@@ -129,7 +129,7 @@
 
 (defnc DemoTitle
   [{:keys [children] :as props}]
-  (apply Element (pass props {:tag "h4" :className (use-sx demo-title)} []) children))
+  (apply Element (pass props {:tag "h3" :className (use-sx demo-title)} []) children))
 
 (defstyle caption
   {:font-size "0.8125rem" :color :palette.text.secondary :line-height 1.5})
@@ -322,7 +322,7 @@
 (defnc CardTitle
   [{:keys [children] :as props}]
   (apply Element (pass props
-                 {:tag "h5"
+                 {:tag "h4"
                   :className (use-sx {:font-size "0.9375rem" :font-weight 600
                                       :color :palette.text.primary :mb 0.5})}
                  [])
