@@ -133,21 +133,26 @@
 (defn ^:no-doc delimiters-balanced?
   "True when `s` closes every quote, parenthesis and bracket it opens, in order.
 
-  A left-to-right depth scan rather than a count comparison, because counting
-  cannot see ORDER: `\")(\"` has one of each and is still broken, and a value
-  that closes a delimiter it never opened terminates a construct belonging to
-  whatever encloses it.
+  A left-to-right scan over a stack of expected closers rather than a count
+  comparison, because counting cannot see ORDER: `\")(\"` has one of each and
+  is still broken, `\"([)]\"` balances both counts while closing the bracket
+  inside the paren, and a value that closes a delimiter it never opened
+  terminates a construct belonging to whatever encloses it.
 
   Quoted runs are opaque, so a parenthesis inside a string is text rather than
-  structure. A backslash escapes the next character, exactly as CSS says it
-  does — which makes a TRAILING backslash unbalanced too: it has nothing left
-  to escape but the delimiter this library appends next, and that is precisely
-  how a value reaches past its own declaration.
+  structure — except an unescaped newline, which CSS ends the string at
+  (bad-string): the trailing quote then reopens a string that swallows text
+  past the declaration, so a newline inside a quoted run is unbalanced here. A
+  backslash escapes the next character, exactly as CSS says it does — which
+  makes a TRAILING backslash unbalanced too: it has nothing left to escape but
+  the delimiter this library appends next, and that is precisely how a value
+  reaches past its own declaration.
 
-  Shared by `check-value!` and `check-selector!` in `cljs.react.sx.compile` and
-  by [[var-value]] here. The three validators guard different syntax but the
-  same failure — text escaping the construct it was written into — and when
-  they were three separate predicates they disagreed about what was safe."
+  Shared by `check-value!`, `check-selector!` and `check-at-rule!` in
+  `cljs.react.sx.compile` and by [[var-value]] here. The validators guard
+  different syntax but the same failure — text escaping the construct it was
+  written into — and when they were separate predicates they disagreed about
+  what was safe."
   [s]
   ;; Gate on a native regex before scanning. This runs for every theme value on
   ;; every provider mount, and most values (`#c2410c`, `8`, `flex`) contain no
@@ -157,20 +162,22 @@
   ;; measurably slower than the counting predicate it replaced.
   (if-not (re-find #"[\"'()\[\]\\]" s)
     true
-    (let [n (.-length s)]
-      (loop [i 0, q 0, paren 0, bracket 0]
+    (let [n (.-length s)
+          closers (array)]
+      (loop [i 0, q 0]
         (if (>= i n)
-          (and (zero? q) (zero? paren) (zero? bracket))
+          (and (zero? q) (zero? (.-length closers)))
           (let [c (.charCodeAt s i)]
             (cond
-              (== c 92) (when (< (inc i) n) (recur (+ i 2) q paren bracket))
-              (pos? q)  (recur (inc i) (if (== c q) 0 q) paren bracket)
-              (or (== c 34) (== c 39)) (recur (inc i) c paren bracket)
-              (== c 40) (recur (inc i) q (inc paren) bracket)
-              (== c 41) (when (pos? paren) (recur (inc i) q (dec paren) bracket))
-              (== c 91) (recur (inc i) q paren (inc bracket))
-              (== c 93) (when (pos? bracket) (recur (inc i) q paren (dec bracket)))
-              :else     (recur (inc i) q paren bracket))))))))
+              (== c 92) (when (< (inc i) n) (recur (+ i 2) q))
+              (pos? q)  (when-not (or (== c 10) (== c 12) (== c 13))
+                          (recur (inc i) (if (== c q) 0 q)))
+              (or (== c 34) (== c 39)) (recur (inc i) c)
+              (== c 40) (do (.push closers 41) (recur (inc i) q))
+              (== c 91) (do (.push closers 93) (recur (inc i) q))
+              (or (== c 41) (== c 93)) (when (== c (.pop closers))
+                                         (recur (inc i) q))
+              :else (recur (inc i) q))))))))
 
 (defn- var-value
   "Render a theme value as a custom property value. Numbers gain `px` unless
@@ -188,9 +195,10 @@
       (throw (ex-info
                (str "cljs.react.sx: theme value at " (pr-str (vec segments))
                     " is not a safe custom property value. `;`, `{`, `}`, `<`,"
-                    " `>`, `\\`, CSS comments and unbalanced quotes or"
-                    " parentheses are rejected, because the :root block is"
-                    " written as text with nothing downstream to re-parse it."
+                    " `>`, `\\`, CSS comments, unbalanced quotes, parentheses"
+                    " or brackets, and a newline inside a quoted run are"
+                    " rejected, because the :root block is written as text"
+                    " with nothing downstream to re-parse it."
                     " Got " (pr-str s) ".")
                {:type ::unsafe-theme-value :path (vec segments) :value v})))
     s))

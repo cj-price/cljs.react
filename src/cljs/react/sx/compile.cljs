@@ -150,9 +150,9 @@
     (throw (ex-info
              (str "cljs.react.sx: value for " (pr-str prop) " is not a safe CSS"
                   " value. `{`, `}`, `;`, `<`, CSS comments, unbalanced quotes,"
-                  " parentheses or brackets, and a trailing backslash are"
-                  " rejected, because they let a value escape its own"
-                  " declaration. Got " (pr-str v) ".")
+                  " parentheses or brackets, a trailing backslash and a newline"
+                  " inside a quoted run are rejected, because they let a value"
+                  " escape its own declaration. Got " (pr-str v) ".")
              {:type ::unsafe-value :prop prop :value v})))
   v)
 
@@ -281,12 +281,13 @@
 
 (defn- check-at-rule!
   [k ks]
-  (when-not (re-matches at-rule-re ks)
+  (when-not (and (re-matches at-rule-re ks)
+                 (theme/delimiters-balanced? ks))
     (throw (ex-info
              (str "cljs.react.sx: " (pr-str k) " is not a usable at-rule. "
                   "Only @media, @supports, @container and @layer preludes are "
-                  "accepted, and only with identifier, whitespace and "
-                  "parenthesis characters.")
+                  "accepted, only with identifier, whitespace and parenthesis "
+                  "characters, and every parenthesis and bracket must close.")
              {:type ::invalid-at-rule :key k})))
   ks)
 

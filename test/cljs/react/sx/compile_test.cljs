@@ -258,6 +258,19 @@
       (is (= :cljs.react.sx.compile/unsafe-value (ex-type {:color v}))
           (pr-str v))))
 
+  (testing "interleaved delimiters are rejected — both counts balance"
+    (doseq [v ["([)]" "[(])" "a([b)]"]]
+      (is (= :cljs.react.sx.compile/unsafe-value (ex-type {:color v}))
+          (pr-str v))))
+
+  (testing "a raw newline inside a quoted run is rejected"
+    (doseq [v ["\"a\nb\"" "'a\nb'" "\"a\rb\""]]
+      (is (= :cljs.react.sx.compile/unsafe-value (ex-type {:content v}))
+          (pr-str v))))
+
+  (testing "a newline BETWEEN quoted strings still passes"
+    (is (string? (css1 {:grid-template-areas "\"a a\"\n\"b b\""}))))
+
   (testing "balanced delimiters, including escapes inside strings, still pass"
     (doseq [v ["rgb(1, 2, 3)" "calc(var(--x) * 2)" "\"a(b\"" "attr(data-x)"]]
       (is (string? (css1 {:color v})) (pr-str v)))))
@@ -306,6 +319,11 @@
            (ex-type {"@import url(evil.css)" {:color "red"}})))
     (is (= :cljs.react.sx.compile/invalid-at-rule
            (ex-type {"@media print{}body" {:color "red"}}))))
+
+  (testing "an at-rule that opens a delimiter it never closes is rejected"
+    (doseq [k ["@media (min-width:600px" "@media ([)]" "@supports (display: grid))"]]
+      (is (= :cljs.react.sx.compile/invalid-at-rule (ex-type {k {:color "red"}}))
+          (pr-str k))))
 
   (testing "a property name that is not a property name is rejected"
     (is (= :cljs.react.sx.compile/invalid-property

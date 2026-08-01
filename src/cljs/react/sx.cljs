@@ -69,8 +69,9 @@
   not depend on theme values.
 
   Values are a trust boundary: a value that could escape its own declaration
-  (`;`, `{`, `}`, `<`, a CSS comment, an unbalanced quote) is rejected with
-  `ex-info`, not escaped, so untrusted input cannot inject a rule."
+  (`;`, `{`, `}`, `<`, a CSS comment, an unbalanced quote, parenthesis or
+  bracket, a trailing backslash, a newline inside a quoted run) is rejected
+  with `ex-info`, not escaped, so untrusted input cannot inject a rule."
   [sx]
   (let [theme (use-theme)
         bpk   (:cx/bp-key theme)]

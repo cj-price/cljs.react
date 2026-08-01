@@ -91,7 +91,17 @@
     ;; The stray `)` invalidates its own declaration and the `(` then swallows
     ;; every LATER declaration in the :root block to EOF — verified in a real
     ;; engine, --cx-spacing and the text colours all resolved to "".
-    (doseq [v [")(" "a)b(c" "]["]]
+    (doseq [v [")(" "a)b(c" "][" "([)]" "[(])"]]
+      (let [e (try (theme/theme->css-vars
+                     (theme/deep-merge-theme theme/default-theme
+                                             {:palette {:primary {:main v}}}))
+                   nil
+                   (catch :default e e))]
+        (is (some? e) (pr-str v))
+        (is (= :cljs.react.sx.theme/unsafe-theme-value (:type (ex-data e)))))))
+
+  (testing "a raw newline inside a quoted run is rejected"
+    (doseq [v ["\"a\nb\"" "'a\nb'" "\"a\rb\""]]
       (let [e (try (theme/theme->css-vars
                      (theme/deep-merge-theme theme/default-theme
                                              {:palette {:primary {:main v}}}))
