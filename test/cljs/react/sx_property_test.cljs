@@ -179,3 +179,67 @@
                           (not (str/includes? out "#1976d2"))
                           (not (str/includes? out "rgba"))))))]
     (is (:result result) (pr-str result))))
+
+;; ---------------------------------------------------------------------------
+;; Keyframes
+
+(def ^:private kf-offset-gen
+  (gen/elements [:from :to 0 25 50 75 100 "12.5%" "80%" [0 100] [25 75]]))
+
+(def ^:private frames-gen
+  (gen/fmap #(into {} %)
+            (gen/not-empty
+              (gen/vector-distinct-by
+                first
+                (gen/tuple kf-offset-gen
+                           (gen/fmap #(into {} %)
+                                     (gen/not-empty
+                                       (gen/vector-distinct-by
+                                         first
+                                         (gen/tuple prop-key-gen prop-value-gen)
+                                         {:max-elements 3}))))
+                {:max-elements 4}))))
+
+(defn- kf-body*
+  [frames]
+  (try (sxc/keyframes->body frames) (catch :default _ rejected)))
+
+(deftest keyframes-emission-is-order-independent
+  ;; The body is content-hashed into the keyframes NAME, so two `=` frames maps
+  ;; that emitted different text would register two names and two rules — the
+  ;; same requirement compile-is-order-independent covers for classes.
+  (let [result (tc/quick-check num-tests
+                 (prop/for-all [frames frames-gen]
+                   (let [shuffled (into (hash-map) (shuffle (seq frames)))
+                         arrayed  (apply array-map
+                                         (mapcat identity (shuffle (seq frames))))]
+                     (= (kf-body* frames) (kf-body* shuffled) (kf-body* arrayed)))))]
+    (is (:result result) (pr-str result))))
+
+(deftest hostile-values-inside-a-frame-are-rejected
+  ;; Proves the frame emitter routes through the same value checks a rule body
+  ;; does, rather than having quietly grown a dialect of its own.
+  (let [result (tc/quick-check num-tests
+                 (prop/for-all [offset kf-offset-gen
+                                k prop-key-gen
+                                v hostile-value-gen]
+                   (= rejected (kf-body* {offset {k v}}))))]
+    (is (:result result) (pr-str result))))
+
+(deftest every-keyframes-body-is-one-insertable-rule
+  ;; The strongest statement of the dev/release-divergence invariant: the dev
+  ;; text node accepts anything, insertRule accepts exactly one rule, and the
+  ;; :test build runs the dev path — so this is the only thing asking a real
+  ;; parser whether every generated @keyframes rule survives release.
+  (sheet/set-insert-mode! :cssom)
+  (let [result (tc/quick-check num-tests
+                 (prop/for-all [frames frames-gen]
+                   (let [body (kf-body* frames)]
+                     (or (= rejected body)
+                         (let [nm (sheet/keyframes-name! body)]
+                           (some (fn [^js r] (= nm (.-name r)))
+                                 (some-> (.querySelector
+                                           js/document "[data-cljs-react-sx]")
+                                         .-sheet .-cssRules array-seq)))))))]
+    (sheet/set-insert-mode! :text)
+    (is (:result result) (pr-str result))))

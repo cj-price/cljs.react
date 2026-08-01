@@ -29,5 +29,8 @@ Thumbs.db
 # Benchmark baselines are per-machine; do not commit
 benchmark/baselines.edn
 
-# Nix / direnv
+# Nix / direnv / devenv
 .direnv/
+.devenv/
+.devenv.flake.nix
+devenv.local.nix

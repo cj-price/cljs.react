@@ -36,21 +36,25 @@ test/cljs/react/        # Tests (cljs.test + React Testing Library)
 public/index.html       # Demo entry point (port 9011)
 shadow-cljs.edn         # Build targets: :demo :test :benchmark :release-demo
 bb.edn                  # Babashka task runner
-shell.nix               # Nix dev environment (Node 22, Clojure, bb, JDK 17)
+devenv.nix              # Dev environment (Node 22, pnpm 10, Clojure, bb, JDK 25)
+devenv.yaml             # nixpkgs input (devenv-nixpkgs/rolling)
+devenv.lock             # Pinned inputs — committed
 ```
 
-## Nix Shell Rule
+## Devenv Rule
 
-Always run commands inside `nix-shell --run '...'` — enforced by global CLAUDE.md.
+The environment is devenv, loaded by direnv via `.envrc` (`use devenv`). Run
+every command through `project-exec <project root> <command>` — enforced by
+global CLAUDE.md. Devenv tools are not on a raw PATH.
 
 ## Common Commands
 
 ```bash
-nix-shell --run 'bb dev'             # Start dev server → http://localhost:9011
-nix-shell --run 'bb test'            # Run tests
-nix-shell --run 'bb lint'            # Lint with clj-kondo
-nix-shell --run 'bb bench'           # Run benchmarks
-nix-shell --run 'bb bench-baseline'  # Save baseline
+project-exec . bb dev             # Start dev server → http://localhost:9011
+project-exec . bb test            # Run tests
+project-exec . bb lint            # Lint with clj-kondo
+project-exec . bb bench           # Run benchmarks
+project-exec . bb bench-baseline  # Save baseline
 ```
 
 ## Key APIs
@@ -90,6 +94,12 @@ use-effect   use-memo   use-callback   use-ref   use-atom   use-lazy-loadable
 (defstyle card {:p 2})   ; stable identity; (use-sx card)
 (use-sx [card (when active? {:bgcolor :palette.primary.main})])        ; deep-merged
 (ThemeProvider {:theme {...}} children)   ; root: no DOM; nested: scoped class
+
+;; Animations — content-addressed, pass the OBJECT under :animation-name
+(def spin (keyframes {:from {:transform "rotate(0deg)"}
+                      :to   {:transform "rotate(360deg)"}}))
+(use-sx {:animation-name spin :animation-duration "900ms"   ; <time> needs a unit
+         :animation-iteration-count :infinite})
 ```
 
 ## Architecture Notes
@@ -110,6 +120,19 @@ use-effect   use-memo   use-callback   use-ref   use-atom   use-lazy-loadable
   Class rules are append-only and content-hashed; the `:root` theme block is a
   separate node REPLACED via `useInsertionEffect`, because append-only dedupe
   makes an A→B→A toggle stick on B.
+- `keyframes` is the one thing that escapes "every rule is anchored on one
+  generated class" — a `@keyframes` name is global by CSS design. It is
+  content-addressed like a class, and the object (not its name) travels in the
+  sx map, resolved on the compile-miss path in `sheet.cljs`. A name captured
+  into a map is a snapshot of registry state, and the failure is silent.
+  Precisely: after `reset-sheet!` the rule is gone while the captured name
+  survives, so the element renders and never animates — the `generation` stamp
+  repairs that for an object and cannot for a copy. Across HOT RELOAD the old
+  rule survives instead (the registry is append-only and `generation` is only
+  bumped by `reset-sheet!`, which is test-only), so a stale name animates the
+  OLD frames forever. The object fixes the first case and the common shape of
+  the second; it does not fix a `Keyframes` captured into a `defstyle` in a
+  namespace shadow did not reload, which keeps the old object and old class.
 
 ## Naming Conventions
 
@@ -130,7 +153,7 @@ kebab-case.
 
 ## Benchmarks
 
-Always run `nix-shell --run 'bb bench'` after touching any of:
+Always run `project-exec . bb bench` after touching any of:
 
 - `src/cljs/react/component.cljs` (props conversion, element creation, memo)
 - `src/cljs/react/db.cljs` (Cursor, DB context)

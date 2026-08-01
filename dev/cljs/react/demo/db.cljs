@@ -1,98 +1,110 @@
 (ns cljs.react.demo.db
   (:require [clojure.string :as str]
             [cljs.react.core :refer [DBProvider use-db]]
-            [cljs.react.demo.util :refer [CodeAndOutput Div P H2 H4 Label
-                                          Input Button Section]])
+            [cljs.react.sx :refer [use-sx]]
+            [cljs.react.demo.ui :refer [CodeAndOutput Btn Row Stack Grid Panel
+                                        TextInput FieldLabel SectionTitle
+                                        Caption]]
+            [cljs.react.demo.util :refer [Div P H4 Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))
 
 (defnc DBCounterDisplay
   []
   (let [count (use-db [:counter :value])]
-    (Div {:className "text-center"}
-      (Div {:className "text-5xl font-bold text-koi-orange mb-2"} @count)
-      (P {:className "text-sm text-gray-600"} "Shared Counter Value"))))
+    (Stack {:gap 0.5 :align :center}
+      (Div {:className (use-sx {:font-size "3rem" :font-weight 700
+                                :line-height 1
+                                :font-family :typography.font-family-mono
+                                :color :palette.primary.main})}
+        @count)
+      (P {:className (use-sx {:font-size "0.75rem" :text-transform :uppercase
+                              :letter-spacing "0.06em"
+                              :color :palette.text.secondary})}
+        "Shared counter value"))))
 
 (defnc DBCounterControls
   []
   (let [count (use-db [:counter :value])]
-    (Div {:className "flex gap-2 justify-center flex-wrap"}
-      (Button {:className "px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors"
-               :onClick #(swap! count dec)}
-        "−")
-      (Button {:className "px-6 py-2 bg-gray-100 text-gray-600 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-               :onClick #(reset! count 0)}
-        "Reset")
-      (Button {:className "px-6 py-2 bg-koi-orange text-white rounded-lg font-medium shadow hover:bg-orange-600 transition-colors"
-               :onClick #(swap! count inc)}
-        "+"))))
+    (Row {:gap 1 :justify :center}
+      (Btn {:variant :secondary :onClick #(swap! count dec)} "−")
+      (Btn {:variant :ghost :onClick #(reset! count 0)} "Reset")
+      (Btn {:onClick #(swap! count inc)} "+"))))
 
 (defnc DBUserForm
   []
   (let [name (use-db [:user :name])
         email (use-db [:user :email])]
-    (Div {:className "space-y-3"}
+    (Stack {:gap 1.5}
       (Div
-        (Label {:className "block text-sm font-medium text-gray-700 mb-1"} "Name")
-        (Input {:type "text"
-                :value (or @name "")
-                :className "w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-koi-orange transition-colors"
-                :onChange #(reset! name (-> % .-target .-value))}))
+        (FieldLabel {} "Name")
+        (TextInput {:value (or @name "")
+                    :onChange #(reset! name (-> % .-target .-value))}))
       (Div
-        (Label {:className "block text-sm font-medium text-gray-700 mb-1"} "Email")
-        (Input {:type "email"
-                :value (or @email "")
-                :className "w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-koi-orange transition-colors"
-                :onChange #(reset! email (-> % .-target .-value))})))))
+        (FieldLabel {} "Email")
+        (TextInput {:type "email"
+                    :value (or @email "")
+                    :onChange #(reset! email (-> % .-target .-value))})))))
+
+(defnc PreviewField
+  [{:keys [label value break]}]
+  (let [blank? (str/blank? value)]
+    (Div
+      (Div {:className (use-sx {:font-size "0.6875rem" :mb 0.25
+                                :color :palette.text.secondary})}
+        label)
+      (Div {:className (use-sx [{:font-size "0.875rem"
+                                 :overflow-wrap (or break "break-word")}
+                                (if blank?
+                                  {:color :palette.text.disabled
+                                   :font-style :italic}
+                                  {:color :palette.text.primary
+                                   :font-weight 500})])}
+        (if blank? "—" value)))))
 
 (defnc DBUserDisplay
   []
   (let [name (use-db [:user :name])
-        email (use-db [:user :email])
-        empty-name? (str/blank? @name)
-        empty-email? (str/blank? @email)]
-    (Div {:className "p-4 bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-lg space-y-3"}
-      (Div {:className "text-xs uppercase tracking-wide text-gray-500 font-semibold"}
+        email (use-db [:user :email])]
+    (Panel {:className (use-sx {:display :flex :flex-direction :column :gap 1.5})}
+      (Div {:className (use-sx {:font-size "0.6875rem" :font-weight 600
+                                :text-transform :uppercase
+                                :letter-spacing "0.06em"
+                                :color :palette.text.secondary})}
         "Live preview")
-      (Div
-        (Div {:className "text-xs text-gray-500 mb-0.5"} "Name")
-        (Div {:className (str "text-sm break-words "
-                              (if empty-name?
-                                "text-gray-400 italic"
-                                "text-gray-900 font-medium"))}
-          (if empty-name? "—" @name)))
-      (Div
-        (Div {:className "text-xs text-gray-500 mb-0.5"} "Email")
-        (Div {:className (str "text-sm break-all "
-                              (if empty-email?
-                                "text-gray-400 italic"
-                                "text-gray-900 font-medium"))}
-          (if empty-email? "—" @email))))))
+      (PreviewField {:label "Name" :value @name})
+      (PreviewField {:label "Email" :value @email :break "anywhere"}))))
+
+(defnc SectionHeading
+  [{:keys [title note]}]
+  (Div
+    (H4 {:className (use-sx {:font-size "0.8125rem" :font-weight 600
+                             :text-transform :uppercase
+                             :letter-spacing "0.06em"
+                             :color :palette.text.primary})}
+      title)
+    (Caption {} note)))
 
 (defnc DBDemo
   []
   (DBProvider {:value {:counter {:value 0}
                        :user {:name "" :email ""}}}
-    (Div {:className "w-full space-y-6"}
-      (Div {:className "space-y-4"}
-        (H4 {:className "text-sm font-semibold text-gray-700 uppercase tracking-wide"}
-          "Shared Counter")
-        (P {:className "text-xs text-gray-500 -mt-3"}
-          "Two components, one cursor each — both stay in sync.")
+    (Stack {:gap 4}
+      (Stack {:gap 2}
+        (SectionHeading {:title "Shared counter"
+                         :note "Two components, one cursor each — both stay in sync."})
         (DBCounterDisplay)
         (DBCounterControls))
-      (Div {:className "space-y-4"}
-        (H4 {:className "text-sm font-semibold text-gray-700 uppercase tracking-wide"}
-          "User Form")
-        (P {:className "text-xs text-gray-500 -mt-3"}
-          "Cursors scoped to nested paths.")
-        (Div {:className "grid grid-cols-1 md:grid-cols-2 gap-4"}
+      (Stack {:gap 2}
+        (SectionHeading {:title "User form"
+                         :note "Cursors scoped to nested paths."})
+        (Grid {:min-width "220px" :gap 2}
           (DBUserForm)
           (DBUserDisplay))))))
 
 (defnc DBTab
   []
   (Section
-    (H2 "🗄️ Global State (DBProvider & Cursors)")
+    (SectionTitle {} "🗄️ Global State (DBProvider & Cursors)")
 
     (CodeAndOutput
      {:title "DBProvider & use-db"

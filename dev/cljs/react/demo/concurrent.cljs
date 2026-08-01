@@ -1,8 +1,11 @@
 (ns cljs.react.demo.concurrent
   (:require [cljs.react.core :refer [use-state use-transition use-deferred-value]]
-            [cljs.react.demo.util :refer [CodeAndOutput Div P Span H2
-                                          Input Section]])
-  (:require-macros [cljs.react.core :refer [defnc]]))
+            [cljs.react.sx :refer [use-sx]]
+            [cljs.react.demo.ui :refer [CodeAndOutput Row Stack TextInput
+                                        SectionTitle Caption PulseDot]]
+            [cljs.react.demo.util :refer [Div Span Section]])
+  (:require-macros [cljs.react.core :refer [defnc]]
+                   [cljs.react.sx :refer [defstyle]]))
 
 ;; A deliberately large list so projecting it is heavy enough that the
 ;; concurrent features visibly help keep the input responsive.
@@ -14,13 +17,43 @@
     items
     (filterv #(re-find (re-pattern q) %) items)))
 
+(defstyle result-list
+  {:max-height "12rem" :overflow :auto :p 1 :border-radius 1
+   :border "1px solid" :border-color :palette.divider
+   :bgcolor :palette.surface.sunken
+   :font-family :typography.font-family-mono :font-size "0.75rem"})
+
 (defnc ResultList
   [{:keys [rows]}]
-  (Div {:className "max-h-48 overflow-auto rounded-lg border border-gray-200 bg-gray-50 p-2 font-mono text-xs"}
-    (if (empty? rows)
-      (Div {:className "text-gray-400 italic p-2"} "no matches")
-      (for [row rows]
-        (Div {:key row :className "px-2 py-0.5 text-gray-700"} row)))))
+  ;; `row-cls` is computed here, not in the loop: `for` is lazy, so React
+  ;; realizes it after this render returns and a `use-sx` in the body would
+  ;; run with no hook dispatcher installed.
+  (let [row-cls   (use-sx {:px 1 :py 0.25 :color :palette.text.secondary})
+        empty-cls (use-sx {:p 1 :font-style :italic
+                           :color :palette.text.disabled})]
+    (Div {:className (use-sx result-list)}
+      (if (empty? rows)
+        (Div {:className empty-cls} "no matches")
+        (for [row rows]
+          (Div {:key row :className row-cls} row))))))
+
+(defnc StatusLine
+  [{:keys [busy? label]}]
+  ;; Both classes unconditionally: the branch below must not change how many
+  ;; hooks this render calls.
+  (let [dot-cls   (use-sx {:display :inline-block
+                           :width "0.5rem" :height "0.5rem"
+                           :border-radius "50%"
+                           :bgcolor :palette.success.main})
+        label-cls (use-sx {:font-size "0.75rem" :text-transform :uppercase
+                           :letter-spacing "0.06em"
+                           :color :palette.text.secondary})]
+    (Row {:gap 1}
+      (if busy?
+        (PulseDot {:tone :warning})
+        (Span {:aria-hidden "true" :className dot-cls}))
+      (Span {:role "status" :aria-live "polite" :className label-cls}
+        label))))
 
 ;;;; use-transition — keep the input snappy while a heavy list update lags
 
@@ -29,28 +62,23 @@
   (let [query            (use-state "")
         rows             (use-state items)
         [pending? start] (use-transition)]
-    (Div {:className "w-full space-y-3"}
-      (Input {:type "text"
-              :aria-label "Filter 3000 items"
-              :value @query
-              :placeholder "Filter 3000 items (e.g. \"1\")…"
-              :className "w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:border-koi-orange focus:ring-2 focus:ring-koi-orange/20 outline-none transition-all"
-              :onChange (fn [e]
-                          (let [v (-> e .-target .-value)]
-                            ;; Urgent: the controlled input updates immediately.
-                            (reset! query v)
-                            ;; Non-urgent: the expensive list re-projects inside
-                            ;; a transition, so typing never blocks on it.
-                            (start (fn [] (reset! rows (matches v))))))})
-      (Div {:className "flex items-center gap-2 text-xs"}
-        (Span {:aria-hidden true
-               :className (str "inline-block w-2 h-2 rounded-full "
-                               (if pending? "bg-amber-500 animate-pulse" "bg-emerald-500"))})
-        (Span {:role "status" :aria-live "polite"
-               :className "uppercase tracking-wide text-gray-500"}
-          (if pending? "updating list…" (str (count @rows) " matches"))))
+    (Stack {:gap 1.5}
+      (TextInput {:aria-label "Filter 3000 items"
+                  :value @query
+                  :placeholder "Filter 3000 items (e.g. \"1\")…"
+                  :onChange (fn [e]
+                              (let [v (-> e .-target .-value)]
+                                ;; Urgent: the controlled input updates immediately.
+                                (reset! query v)
+                                ;; Non-urgent: the expensive list re-projects inside
+                                ;; a transition, so typing never blocks on it.
+                                (start (fn [] (reset! rows (matches v))))))})
+      (StatusLine {:busy? pending?
+                   :label (if pending?
+                            "updating list…"
+                            (str (count @rows) " matches"))})
       (ResultList {:rows @rows})
-      (P {:className "text-xs text-gray-500 italic"}
+      (Caption {:className (use-sx {:font-style :italic})}
         "The input stays responsive because the list update runs inside start-transition."))))
 
 ;;;; use-deferred-value — render a lagging copy of a fast-changing value
@@ -61,29 +89,25 @@
         deferred (use-deferred-value @text)
         stale?   (not= @text deferred)
         rows     (matches deferred)]
-    (Div {:className "w-full space-y-3"}
-      (Input {:type "text"
-              :aria-label "Filter items (deferred)"
-              :value @text
-              :placeholder "Type to filter — the list lags behind…"
-              :className "w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:border-koi-orange focus:ring-2 focus:ring-koi-orange/20 outline-none transition-all"
-              :onChange #(reset! text (-> % .-target .-value))})
-      (Div {:className "flex items-center gap-2 text-xs"}
-        (Span {:aria-hidden true
-               :className (str "inline-block w-2 h-2 rounded-full "
-                               (if stale? "bg-amber-500 animate-pulse" "bg-emerald-500"))})
-        (Span {:role "status" :aria-live "polite"
-               :className "uppercase tracking-wide text-gray-500"}
-          (if stale? "list catching up…" (str (count rows) " matches"))))
-      (Div {:className (str "transition-opacity " (when stale? "opacity-50"))}
+    (Stack {:gap 1.5}
+      (TextInput {:aria-label "Filter items (deferred)"
+                  :value @text
+                  :placeholder "Type to filter — the list lags behind…"
+                  :onChange #(reset! text (-> % .-target .-value))})
+      (StatusLine {:busy? stale?
+                   :label (if stale?
+                            "list catching up…"
+                            (str (count rows) " matches"))})
+      (Div {:className (use-sx [{:transition "opacity 160ms ease"}
+                                (when stale? {:opacity 0.5})])}
         (ResultList {:rows rows}))
-      (P {:className "text-xs text-gray-500 italic"}
+      (Caption {:className (use-sx {:font-style :italic})}
         "use-deferred-value feeds the list a value that lags the input, dimming while it catches up."))))
 
 (defnc ConcurrentTab
   []
   (Section
-    (H2 "⏱️ Concurrent — Transitions & Deferred Values")
+    (SectionTitle {} "⏱️ Concurrent — Transitions & Deferred Values")
 
     (CodeAndOutput
      {:title "useTransition — non-urgent updates"

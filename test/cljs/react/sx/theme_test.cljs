@@ -86,6 +86,30 @@
         (is (some? e) (pr-str v))
         (is (= :cljs.react.sx.theme/unsafe-theme-value (:type (ex-data e)))))))
 
+  (testing "delimiters are checked in ORDER, not by count"
+    ;; `)(` has one of each, so the old total-comparison predicate passed it.
+    ;; The stray `)` invalidates its own declaration and the `(` then swallows
+    ;; every LATER declaration in the :root block to EOF — verified in a real
+    ;; engine, --cx-spacing and the text colours all resolved to "".
+    (doseq [v [")(" "a)b(c" "][" "([)]" "[(])"]]
+      (let [e (try (theme/theme->css-vars
+                     (theme/deep-merge-theme theme/default-theme
+                                             {:palette {:primary {:main v}}}))
+                   nil
+                   (catch :default e e))]
+        (is (some? e) (pr-str v))
+        (is (= :cljs.react.sx.theme/unsafe-theme-value (:type (ex-data e)))))))
+
+  (testing "a raw newline inside a quoted run is rejected"
+    (doseq [v ["\"a\nb\"" "'a\nb'" "\"a\rb\""]]
+      (let [e (try (theme/theme->css-vars
+                     (theme/deep-merge-theme theme/default-theme
+                                             {:palette {:primary {:main v}}}))
+                   nil
+                   (catch :default e e))]
+        (is (some? e) (pr-str v))
+        (is (= :cljs.react.sx.theme/unsafe-theme-value (:type (ex-data e)))))))
+
   (testing "the default theme's own values pass — parens and quotes balance"
     (is (map? (theme/theme->css-vars theme/default-theme-normalized))))
 

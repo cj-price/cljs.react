@@ -56,14 +56,30 @@
     ;; instead of falling through to a bare number.
     "grid-gap" "grid-row-gap" "grid-column-gap"})
 
+(def ^:private time-props
+  "Properties taking a CSS `<time>`. Unlike `<length>`, `<time>` has no
+  unitless form — not even for zero — so every bare number is a value the
+  parser discards."
+  #{"animation-duration" "animation-delay"
+    "transition-duration" "transition-delay"})
+
 (def ^:private content-literals
   "`content` values that must not be auto-quoted."
   #{"none" "normal" "inherit" "initial" "unset" "revert" "revert-layer"
     "open-quote" "close-quote" "no-open-quote" "no-close-quote"})
 
-(defn- key-name
+(def ^:private base-ctx
+  "The collection context of an unnested rule."
+  {:at nil :order 0 :selector "&"})
+
+(defn ^:no-doc key-name
   "The raw name of an sx key. Strings pass through; keywords/symbols use their
-  name so `:&:hover` and `\"&:hover\"` are the same key."
+  name so `:&:hover` and `\"&:hover\"` are the same key.
+
+  Public because `sheet.cljs` walks the same map to substitute keyframes and
+  must agree with this namespace about what an sx key IS. When it decided that
+  for itself it excluded symbols, so `{'animation-name kf}` was rejected while
+  `{'color \"red\"}` compiled — one map shape, two answers."
   [k]
   (if (string? k) k (name k)))
 
@@ -101,6 +117,18 @@
     ;; Before the zero case: elevation 0 is a real shadow level (`none`), and
     ;; a bare `box-shadow:0` is invalid CSS the parser discards.
     (= "box-shadow" prop)          (str "var(--cx-shadows-" n ")")
+
+    ;; Also before the zero case, and a throw rather than a guess: `0` is the
+    ;; one number that looks safe here and is not, and there is no unit this
+    ;; namespace could pick that would be right more often than wrong.
+    (contains? time-props prop)
+    (throw (ex-info
+             (str "cljs.react.sx: " prop " takes a CSS <time>, which always "
+                  "needs a unit — zero included. " (pr-str n) " would emit "
+                  (pr-str (str n "px")) ", which the parser discards. Write a "
+                  "string instead, e.g. \"200ms\" or \"0s\".")
+             {:type ::invalid-time-value :prop prop :value n}))
+
     (zero? n)                      "0"
     (contains? spacing-props prop) (str "calc(var(--cx-spacing) * " n ")")
     (= "border-radius" prop)       (str "calc(var(--cx-shape-border-radius) * " n ")")
@@ -118,13 +146,13 @@
 (defn- check-value!
   [prop v]
   (when (or (re-find unsafe-value v)
-            (odd? (count (re-seq #"\"" v)))
-            (odd? (count (re-seq #"'" v))))
+            (not (theme/delimiters-balanced? v)))
     (throw (ex-info
              (str "cljs.react.sx: value for " (pr-str prop) " is not a safe CSS"
-                  " value. `{`, `}`, `;`, `<`, CSS comments and unbalanced"
-                  " quotes are rejected, because they let a value escape its"
-                  " own declaration. Got " (pr-str v) ".")
+                  " value. `{`, `}`, `;`, `<`, CSS comments, unbalanced quotes,"
+                  " parentheses or brackets, a trailing backslash and a newline"
+                  " inside a quoted run are rejected, because they let a value"
+                  " escape its own declaration. Got " (pr-str v) ".")
              {:type ::unsafe-value :prop prop :value v})))
   v)
 
@@ -235,24 +263,31 @@
 
 (defn- check-selector!
   [k ks]
-  (when-not (re-matches selector-re ks)
+  ;; The charset alone is not enough: it admits `(`, `)`, `[` and `]` with no
+  ;; pairing requirement, so `&:has(.a` compiles to `.cx-1:has(.a{…}` — one
+  ;; unclosed function that swallows every rule appended after it on the dev
+  ;; text-node path, where nothing re-parses. Same scan the values get.
+  (when-not (and (re-matches selector-re ks)
+                 (theme/delimiters-balanced? ks))
     (throw (ex-info
              (str "cljs.react.sx: " (pr-str k) " is not a usable nested "
-                  "selector. It must start with `&` and use only identifier "
-                  "characters, combinators and pseudo/attribute syntax — a "
-                  "comma or a brace would let the rule escape the generated "
-                  "class.")
+                  "selector. It must start with `&`, use only identifier "
+                  "characters, combinators and pseudo/attribute syntax, and "
+                  "close every parenthesis and bracket it opens — a comma, a "
+                  "brace or a dangling `(` would let the rule escape the "
+                  "generated class.")
              {:type ::invalid-selector :key k})))
   ks)
 
 (defn- check-at-rule!
   [k ks]
-  (when-not (re-matches at-rule-re ks)
+  (when-not (and (re-matches at-rule-re ks)
+                 (theme/delimiters-balanced? ks))
     (throw (ex-info
              (str "cljs.react.sx: " (pr-str k) " is not a usable at-rule. "
                   "Only @media, @supports, @container and @layer preludes are "
-                  "accepted, and only with identifier, whitespace and "
-                  "parenthesis characters.")
+                  "accepted, only with identifier, whitespace and parenthesis "
+                  "characters, and every parenthesis and bracket must close.")
              {:type ::invalid-at-rule :key k})))
   ks)
 
@@ -343,7 +378,7 @@
   `breakpoints` is a 5-vector of pixel numbers; the theme is deliberately not
   passed, so output provably cannot depend on theme values."
   [sx breakpoints]
-  (->> (collect {} sx {:at nil :order 0 :selector "&"} breakpoints)
+  (->> (collect {} sx base-ctx breakpoints)
        (vals)
        (remove #(empty? (:decls %)))
        (sort-by (fn [{:keys [at order selector]}]
@@ -401,6 +436,153 @@
   `cls` to get the hashable sentinel form."
   [rules cls]
   (rendered->css (render-rules rules) cls))
+
+;; ---------------------------------------------------------------------------
+;; Keyframes
+;;
+;; A keyframes body is emitted here and named elsewhere: this namespace never
+;; learns the generated name, so it stays as pure as it is for classes. The
+;; body is the hashable content, exactly as the sentinel rule text is for a
+;; class.
+
+(defn- flat-decls
+  "Declarations for a FLAT sx map, as `emit-decls` input.
+
+  Routed through [[sorted-entries]] and [[add-decls]] rather than reimplemented:
+  a keyframe block is an sx map, so it gets the same shorthands, spacing scale,
+  theme tokens, `content` quoting and value checks a rule body gets, or it
+  silently grows a dialect of its own. Returns nil when every declaration
+  resolved to nil."
+  [m where]
+  (let [acc (reduce
+              (fn [a [k v]]
+                (let [ks (key-name k)]
+                  (when (or (map? v)
+                            (str/starts-with? ks "&")
+                            (str/starts-with? ks "@"))
+                    (throw (ex-info
+                             (str "cljs.react.sx: " (pr-str k) " in " where
+                                  " is not a plain declaration. A keyframe block"
+                                  " holds declarations only — no nested"
+                                  " selectors, at-rules or responsive maps. For"
+                                  " a responsive animation, define two keyframes"
+                                  " and switch `animation-name` in a breakpoint"
+                                  " map instead.")
+                             {:type ::invalid-keyframe-body :key k :value v})))
+                  (add-decls a base-ctx k v)))
+              {} (sorted-entries m))]
+    (:decls (get acc [nil "&"]))))
+
+(def ^:private kf-offset-re
+  "A keyframe offset written as a percentage."
+  #"^(\d{1,3}(?:\.\d+)?|\.\d+)%$")
+
+(defn- invalid-kf-selector!
+  [k]
+  (throw (ex-info
+           (str "cljs.react.sx: " (pr-str k) " is not a keyframe selector. Use "
+                "`:from`, `:to`, a number 0-100, or a percentage string like "
+                "\"33.3%\" — and a VECTOR for a shared block, e.g. "
+                "{[0 100] {:opacity 1}}. An out-of-range offset drops its own "
+                "keyframe and nothing else, which is invisible.")
+           {:type ::invalid-keyframe-selector :key k})))
+
+(defn- kf-offset
+  "One keyframe selector component -> its canonical offset, a number 0-100.
+  `:from` and `\"0%\"` are the same offset, which is what lets duplicates be
+  caught rather than silently resolved last-wins."
+  [k]
+  (let [n (cond
+            (number? k) k
+            (or (keyword? k) (string? k))
+            (let [ks (key-name k)]
+              (case ks
+                "from" 0
+                "to"   100
+                (if-let [[_ d] (re-matches kf-offset-re ks)]
+                  (js/parseFloat d)
+                  (invalid-kf-selector! k))))
+            :else (invalid-kf-selector! k))]
+    (if (and (not (js/isNaN n)) (<= 0 n 100))
+      n
+      (invalid-kf-selector! k))))
+
+(defn- kf-offsets
+  "The offsets one frames key covers. A vector key is the multi-selector form
+  (`0%,100%`); a comma string is deliberately not accepted, so `,` stays
+  rejected in every sx key without exception."
+  [k]
+  (if (vector? k)
+    (if (seq k)
+      (mapv kf-offset k)
+      (invalid-kf-selector! k))
+    [(kf-offset k)]))
+
+(defn keyframes->body
+  "Emit the BODY of an `@keyframes` rule from a frames map.
+
+  `{:from {:opacity 0} :to {:opacity 1}}` -> `\"0%{opacity:0}100%{opacity:1}\"`.
+
+  Frames emit in ascending offset order regardless of authoring order. CSS
+  ignores frame order, but the body is content-hashed into the keyframes name,
+  so two `=` frames maps that emitted different text would register two names
+  and two rules — the same cache-correctness requirement [[sorted-entries]]
+  exists for, and a frames map above eight entries is a `PersistentHashMap`
+  with no order of its own.
+
+  Rejects an empty body loudly, because nothing downstream will: `@keyframes
+  x{}` is syntactically valid, so `insertRule` accepts it in release just as
+  the dev text node does, and an element referencing it renders perfectly and
+  simply never animates."
+  [frames]
+  (when-not (map? frames)
+    (throw (ex-info
+             (str "cljs.react.sx: keyframes must be a map of offset -> "
+                  "declarations. Got " (pr-str frames) ".")
+             {:type ::invalid-keyframes :frames frames})))
+  (when (empty? frames)
+    (throw (ex-info
+             "cljs.react.sx: keyframes must declare at least one frame."
+             {:type ::empty-keyframes :frames frames})))
+  (let [entries (mapv (fn [[k v]]
+                        (when-not (map? v)
+                          (throw (ex-info
+                                   (str "cljs.react.sx: the value for keyframe "
+                                        (pr-str k) " must be a map of "
+                                        "declarations. Got " (pr-str v) ".")
+                                   {:type ::invalid-keyframe-body
+                                    :key k :value v})))
+                        (let [offs (kf-offsets k)]
+                          {:offsets (vec (sort offs))
+                           :decls   (flat-decls v (str "keyframe " (pr-str k)))}))
+                      frames)
+        all     (mapcat :offsets entries)]
+    (when-not (= (count all) (count (distinct all)))
+      (throw (ex-info
+               (str "cljs.react.sx: keyframe offset(s) "
+                    (pr-str (vec (sort (for [[o n] (frequencies all)
+                                             :when (> n 1)] o))))
+                    " are declared more than once. `:from` and 0 and \"0%\" are"
+                    " the same offset; one of them would silently win.")
+               {:type ::duplicate-keyframe :offsets (vec (sort (distinct all)))})))
+    (let [live (filterv (comp seq :decls) entries)]
+      (when (empty? live)
+        (throw (ex-info
+                 (str "cljs.react.sx: every declaration in these keyframes "
+                      "resolved to nil, so the body would be empty.")
+                 {:type ::empty-keyframes :frames frames})))
+      (->> live
+           ;; On the LOWEST offset, not on the offset vector: `compare` orders
+           ;; vectors by count before contents, which would put `[0 100]` after
+           ;; `[50]`. Ties are impossible — a shared offset is rejected above —
+           ;; so this is a total order.
+           (sort-by (comp first :offsets))
+           (map (fn [{:keys [offsets decls]}]
+                  (str (str/join "," (map #(str % "%") offsets))
+                       "{" (emit-decls decls) "}")))
+           (str/join)))))
+
+;; ---------------------------------------------------------------------------
 
 (defn vars-decls
   "Render a sorted var map as a declaration body. The one encoding of custom

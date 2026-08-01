@@ -147,6 +147,8 @@ no dependencies, Clojure or npm.
 | --- | --- |
 | `use-sx` | Compile an sx map (or `defstyle` var, or vector of them) to a class name |
 | `defstyle` | Define a stable style identity — macro, `(:require-macros [cljs.react.sx :refer [defstyle]])` |
+| `keyframes` | Define an animation; the returned value goes under `:animation-name` |
+| `keyframes-name` | Its generated global name, for the `animation` shorthand or interop |
 | `use-theme` | The merged theme map, for values rather than vars |
 | `use-theme-class` | Scope class from the nearest nested `ThemeProvider`, or nil |
 | `theme-var` | `"var(--cx-…)"` string for a theme path, for hand-written CSS |
@@ -217,16 +219,23 @@ Value types partition with no heuristics:
 Numbers mean different things per property class: `:p 2` multiplies the theme
 spacing unit, `:border-radius 1` the shape scale, `:box-shadow 2` indexes the
 elevation list, unitless properties (`:font-weight`, `:opacity`, `:z-index`,
-`:line-height`) stay raw, and everything else gets `px`. `0` is bare `0`
-everywhere except `:box-shadow`, where it is elevation 0 (`none`) — a bare
-`box-shadow: 0` is invalid CSS. Strings bypass the scale entirely
-(`:p "1.5rem"`).
+`:line-height`) stay raw, and everything else gets `px`. `0` is bare `0` except
+in two places: `:box-shadow`, where it is elevation 0 (`none`) because a bare
+`box-shadow: 0` is invalid CSS; and the `<time>` longhands
+(`animation-duration`, `animation-delay`, `transition-duration`,
+`transition-delay`), where **any** bare number including `0` throws, because
+CSS has no unitless time — write `"0s"` or `"200ms"`. Strings bypass the scale
+entirely (`:p "1.5rem"`).
 
 Values are a **trust boundary**. A value that could escape its own declaration
-— `;`, `{`, `}`, `<`, a CSS comment, an unbalanced quote — is rejected with
+— `;`, `{`, `}`, `<`, a CSS comment, an unbalanced quote, parenthesis or
+bracket, or a trailing backslash — is rejected with
 `ex-info`, not escaped: a `;` payload still parses as one valid rule, so
-`insertRule` would accept it in production. The same goes for selector keys
-(no top-level `,`), at-rule keys (`@media`, `@supports`, `@container`,
+`insertRule` would accept it in production. Delimiters are checked by a
+left-to-right depth scan rather than by counting, because counting cannot see
+order — `")("` has one of each and still closes a construct it never opened.
+The same goes for selector keys (no top-level `,`, and every `(`/`[` closed),
+at-rule keys (`@media`, `@supports`, `@container`,
 `@layer` only) and property names. Theme values are checked the same way, more
 strictly — the `:root` block is written as text with nothing downstream to
 re-parse it.
@@ -273,11 +282,16 @@ custom property instead of in the sx map:
 
 The library dev-warns once past a few thousand interned classes.
 
-### Theming, and why a theme swap regenerates no CSS
+### Theming, and why a theme swap regenerates no style CSS
 
-Theme values reach CSS only as custom properties, never inlined. Swapping a
-theme rewrites the `:root { --cx-…: … }` block and nothing else: not one style
-rule is regenerated and every component keeps the class it already had.
+Theme values reach CSS only as custom properties, never inlined. Swapping the
+root theme rewrites the `:root { --cx-…: … }` block: not one style rule is
+regenerated and every component keeps the class it already had.
+
+The one thing a swap *can* add is a **nested** provider's scope rule, because
+those variables are baked into a class rather than referenced — see
+[`ThemeProvider`](#themeprovider) below. Those are var blocks, not restyles;
+the style rules and the compile count still do not move.
 Components that read the theme *do* re-render — `use-sx` calls `use-theme`, so
 every styled component is a context subscriber by construction and context
 propagation bypasses memo bailouts — but that render is a memo hit returning the
@@ -520,6 +534,40 @@ saving re-evaluates it, yielding a fresh identity so components recompile and
 re-render against the new class. `defonce` would make style edits invisible on
 hot reload.
 
+### `Keyframes` — returned by `keyframes`
+
+```clojure
+(def spin (sx/keyframes {:from {:transform "rotate(0deg)"}
+                         :to   {:transform "rotate(360deg)"}}))
+
+@spin                                    ;; the frames map — a deref is a read
+(use-sx {:animation-name spin            ;; the OBJECT, not its name
+         :animation-duration "900ms"
+         :animation-timing-function :linear
+         :animation-iteration-count :infinite})
+```
+
+Offsets are `:from`, `:to`, a number 0–100, or a percentage string; a vector key
+shares one block between offsets (`{[0 100] {:opacity 1}}`). Each frame is an
+ordinary sx map — shorthands, the spacing scale and theme tokens all work — but
+declarations only. For a responsive animation, define two and switch
+`:animation-name` in a breakpoint map.
+
+Like a class, a `Keyframes` is content-addressed: identical frames share one
+`cx-kf-…` rule, and the name is derived on every compile rather than captured.
+That is what keeps it correct across hot reload. `keyframes-name` exists for the
+`animation` shorthand and interop, but the string it returns is a snapshot —
+store it and it outlives the rule it names, leaving an element that renders
+perfectly and never animates. Prefer the `animation-*` longhands anyway: sx
+composition deep-merges per property, so the shorthand resets every sub-property
+a later part meant to keep.
+
+Two footguns the compiler now refuses rather than emitting: `<time>` properties
+(`animation-duration`, `transition-delay`, …) reject bare numbers, since CSS has
+no unitless time even for zero — write `"200ms"`; and empty frames are rejected
+at definition, because `@keyframes x{}` is valid CSS that no downstream check
+would catch.
+
 ## Re-render model
 
 A quick mental model of what causes a component to re-render:
@@ -573,6 +621,14 @@ and a `use-sx` class on the same element and expect a predictable winner.
 If author CSS must win, raise its specificity; sx deliberately ships no
 specificity knob.
 
+One exception to "every rule is anchored on a generated class": `keyframes`
+registers a `@keyframes cx-kf-…` rule, whose name is global by CSS design. Its
+*reach* is unchanged — a keyframes rule paints nothing on its own, and a hashed
+name is exactly as global as the hashed class names already are — but a class is
+no longer self-contained. `.cx-abc{animation-name:cx-kf-def}` references CSS
+outside its own rules, so reproducing an element's styling now takes the class
+*and* its keyframes.
+
 ### `defnc` vs `Element` — which one calls a component?
 
 Call `defnc` components directly. `Element` is for DOM tags (strings) and
@@ -607,12 +663,14 @@ or a DOM element through `Element`, pass the `RefAtom` directly —
 
 ## Development
 
-Uses `nix-shell` (Node 22, Clojure, Babashka, JDK 17) and `bb` tasks:
+Uses [devenv](https://devenv.sh) (Node 22, pnpm 10, Clojure, Babashka, JDK 25)
+and `bb` tasks. With direnv installed, `direnv allow` loads the environment on
+`cd`; otherwise prefix each command with `devenv shell --`:
 
 ```bash
-nix-shell --run 'bb dev'    # watch + compile demo → http://localhost:9011
-nix-shell --run 'bb test'   # compile and run test suite
-nix-shell --run 'bb bench'  # run performance benchmarks
+bb dev    # watch + compile demo → http://localhost:9011
+bb test   # compile and run test suite
+bb bench  # run performance benchmarks
 ```
 
 Test suite uses `cljs.test` + `@testing-library/react` + `global-jsdom`; the
@@ -627,7 +685,7 @@ The `:release-demo` shadow-cljs build target compiles the demo under
 `:optimizations :advanced` as a smoke test for externs / dead-code issues:
 
 ```bash
-nix-shell --run 'npx shadow-cljs release release-demo'
+pnpm exec shadow-cljs release release-demo
 ```
 
 ## License

@@ -2,7 +2,28 @@
   "mcpServers": {
     "chrome-devtools": {
       "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest"]
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@1.6.0",
+        "--headless=${CLAUDE_CHROME_HEADLESS:-true}",
+        "--isolated",
+        "--no-usage-statistics",
+        "--no-performance-crux",
+        "--executablePath",
+        "${CLAUDE_CHROME_PATH:-/opt/google/chrome/chrome}"
+      ]
+    },
+    "chrome-devtools-visible": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@1.6.0",
+        "--isolated",
+        "--no-usage-statistics",
+        "--no-performance-crux",
+        "--executablePath",
+        "${CLAUDE_CHROME_PATH:-/opt/google/chrome/chrome}"
+      ]
     }
   }
 }

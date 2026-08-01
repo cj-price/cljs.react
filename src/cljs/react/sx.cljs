@@ -5,12 +5,18 @@
   Opt-in — `cljs.react.core` never requires this namespace, so a consumer that
   doesn't require it pays nothing.
 
-  Theme values are indirected through CSS custom properties. Swapping a theme
-  rewrites the `:root` block and nothing else: not one style rule is
-  regenerated and every component keeps the class it already had. Components
-  that read the theme do re-render — they are context subscribers by
-  construction — but that render is a memo hit returning the same class and
-  mutating no DOM.
+  Theme values are indirected through CSS custom properties. Swapping the root
+  theme rewrites the `:root` block: not one style rule is regenerated and every
+  component keeps the class it already had. Components that read the theme do
+  re-render — they are context subscribers by construction — but that render is
+  a memo hit returning the same class and mutating no DOM.
+
+  A NESTED provider is the exception, and the only thing a swap can add: its
+  variables are baked into a `.cx-theme-…` class rather than referenced, so it
+  registers one such rule per distinct theme it inherits, permanently. Those
+  are var blocks rather than restyles — the style rules and the compile count
+  still do not move — but \"regenerates no CSS\" is a claim about style rules,
+  not about the total rule count.
 
       (defnc Card [{:keys [children]}]
         (let [cls (use-sx {:p 2
@@ -63,8 +69,9 @@
   not depend on theme values.
 
   Values are a trust boundary: a value that could escape its own declaration
-  (`;`, `{`, `}`, `<`, a CSS comment, an unbalanced quote) is rejected with
-  `ex-info`, not escaped, so untrusted input cannot inject a rule."
+  (`;`, `{`, `}`, `<`, a CSS comment, an unbalanced quote, parenthesis or
+  bracket, a trailing backslash, a newline inside a quoted run) is rejected
+  with `ex-info`, not escaped, so untrusted input cannot inject a rule."
   [sx]
   (let [theme (use-theme)
         bpk   (:cx/bp-key theme)]
@@ -104,6 +111,57 @@
                           " a dotted keyword or a dotted string. Got "
                           (pr-str path) ".")
                      {:type ::invalid-theme-path :got path})))))
+
+(defn keyframes
+  "Define an animation. Returns a value to put under `:animation-name`.
+
+      (def spin (keyframes {:from {:transform \"rotate(0deg)\"}
+                            :to   {:transform \"rotate(360deg)\"}}))
+
+      (use-sx {:animation-name spin
+               :animation-duration \"900ms\"
+               :animation-timing-function :linear
+               :animation-iteration-count :infinite})
+
+  Offsets are `:from`, `:to`, a number 0-100, or a percentage string; a vector
+  key shares one block between offsets (`{[0 100] {:opacity 1}}`). Each frame
+  is an ordinary sx map — shorthands, the spacing scale and theme tokens all
+  work inside one — but declarations only: no nested selectors, at-rules or
+  responsive maps. For a responsive animation, define two and switch
+  `:animation-name` in a breakpoint map.
+
+  Pass the returned value itself, not its name. The name is derived on every
+  compile, which is what keeps it correct across hot reload; a name captured
+  into a map goes stale silently, leaving an element that renders perfectly and
+  never animates. Use [[keyframes-name]] only where a string is unavoidable,
+  and call it at the point of use — never store what it returns.
+
+  Bind with `def`, never `defonce`. `defonce` keeps the old object across a
+  hot reload, so an edited frames map is ignored and the element animates the
+  old animation forever — the one way to reintroduce the staleness this design
+  exists to prevent. Same reasoning as [[defstyle]], which expands to `def`
+  deliberately.
+
+  Prefer the `animation-*` longhands over the `animation` shorthand: sx
+  composition deep-merges per property, so the shorthand resets every
+  sub-property a later part meant to keep. Note also that `:animation-name`
+  alone animates nothing — `animation-duration` defaults to `0s`.
+
+  The frames map is compiled eagerly, so a malformed one throws here rather
+  than at whichever render first touches it. Registration is lazy."
+  [frames]
+  (sheet/keyframes frames))
+
+(defn keyframes-name
+  "Register `kf` if needed and return its generated global name, for the
+  `animation` shorthand, a `:style` prop or interop.
+
+  An escape hatch, and a function rather than a deref because it is effectful.
+  The name it returns is a snapshot: store it in a var or an sx map and it
+  outlives the rule it names across hot reload, silently. `@kf` returns the
+  frames map instead, which is what a deref should do."
+  [kf]
+  (sheet/ensure-keyframes! kf))
 
 ;; ---------------------------------------------------------------------------
 ;; ThemeProvider

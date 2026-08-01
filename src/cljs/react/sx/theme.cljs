@@ -130,11 +130,54 @@
 
 (def ^:private var-name-re #"^--[a-zA-Z0-9-]+$")
 
-(defn- balanced?
+(defn ^:no-doc delimiters-balanced?
+  "True when `s` closes every quote, parenthesis and bracket it opens, in order.
+
+  A left-to-right scan over a stack of expected closers rather than a count
+  comparison, because counting cannot see ORDER: `\")(\"` has one of each and
+  is still broken, `\"([)]\"` balances both counts while closing the bracket
+  inside the paren, and a value that closes a delimiter it never opened
+  terminates a construct belonging to whatever encloses it.
+
+  Quoted runs are opaque, so a parenthesis inside a string is text rather than
+  structure — except an unescaped newline, which CSS ends the string at
+  (bad-string): the trailing quote then reopens a string that swallows text
+  past the declaration, so a newline inside a quoted run is unbalanced here. A
+  backslash escapes the next character, exactly as CSS says it does — which
+  makes a TRAILING backslash unbalanced too: it has nothing left to escape but
+  the delimiter this library appends next, and that is precisely how a value
+  reaches past its own declaration.
+
+  Shared by `check-value!`, `check-selector!` and `check-at-rule!` in
+  `cljs.react.sx.compile` and by [[var-value]] here. The validators guard
+  different syntax but the same failure — text escaping the construct it was
+  written into — and when they were separate predicates they disagreed about
+  what was safe."
   [s]
-  (and (even? (count (re-seq #"\"" s)))
-       (even? (count (re-seq #"'" s)))
-       (= (count (re-seq #"\(" s)) (count (re-seq #"\)" s)))))
+  ;; Gate on a native regex before scanning. This runs for every theme value on
+  ;; every provider mount, and most values (`#c2410c`, `8`, `flex`) contain no
+  ;; delimiter at all, so they are balanced by definition and never need the
+  ;; loop. Char CODES rather than `nth`: `nth` on a string goes through
+  ;; protocol dispatch and allocates a boxed char per position, which made this
+  ;; measurably slower than the counting predicate it replaced.
+  (if-not (re-find #"[\"'()\[\]\\]" s)
+    true
+    (let [n (.-length s)
+          closers (array)]
+      (loop [i 0, q 0]
+        (if (>= i n)
+          (and (zero? q) (zero? (.-length closers)))
+          (let [c (.charCodeAt s i)]
+            (cond
+              (== c 92) (when (< (inc i) n) (recur (+ i 2) q))
+              (pos? q)  (when-not (or (== c 10) (== c 12) (== c 13))
+                          (recur (inc i) (if (== c q) 0 q)))
+              (or (== c 34) (== c 39)) (recur (inc i) c)
+              (== c 40) (do (.push closers 41) (recur (inc i) q))
+              (== c 91) (do (.push closers 93) (recur (inc i) q))
+              (or (== c 41) (== c 93)) (when (== c (.pop closers))
+                                         (recur (inc i) q))
+              :else (recur (inc i) q))))))))
 
 (defn- var-value
   "Render a theme value as a custom property value. Numbers gain `px` unless
@@ -148,13 +191,14 @@
             (number? v)  (if (some unitless-name? segments) (str v) (str v "px"))
             (keyword? v) (name v)
             :else        (str v))]
-    (when (or (re-find unsafe-var-value s) (not (balanced? s)))
+    (when (or (re-find unsafe-var-value s) (not (delimiters-balanced? s)))
       (throw (ex-info
                (str "cljs.react.sx: theme value at " (pr-str (vec segments))
                     " is not a safe custom property value. `;`, `{`, `}`, `<`,"
-                    " `>`, `\\`, CSS comments and unbalanced quotes or"
-                    " parentheses are rejected, because the :root block is"
-                    " written as text with nothing downstream to re-parse it."
+                    " `>`, `\\`, CSS comments, unbalanced quotes, parentheses"
+                    " or brackets, and a newline inside a quoted run are"
+                    " rejected, because the :root block is written as text"
+                    " with nothing downstream to re-parse it."
                     " Got " (pr-str s) ".")
                {:type ::unsafe-theme-value :path (vec segments) :value v})))
     s))

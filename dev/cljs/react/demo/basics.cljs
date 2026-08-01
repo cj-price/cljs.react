@@ -1,63 +1,67 @@
 (ns cljs.react.demo.basics
   (:require ["react" :as react]
             [cljs.react.core :refer [Element use-state use-ref]]
-            [cljs.react.demo.util :refer [CodeAndOutput H2 Section]])
+            [cljs.react.sx :refer [use-sx]]
+            [cljs.react.demo.ui :refer [CodeAndOutput Btn Row Card CardTitle
+                                        SectionTitle]]
+            [cljs.react.demo.util :refer [Section]])
   (:require-macros [cljs.react.core :refer [defnc]]))
 
 (defnc HelloWorld
   []
-  (Element {:tag "div" :className "text-xl font-medium text-gray-700"}
+  (Element {:tag "div"
+            :className (use-sx {:font-size "1.25rem" :font-weight 500
+                                :color :palette.text.primary})}
     "Hello" " " "World!"))
 
 (defnc Greeting
   [{:keys [name emoji]}]
-  (Element {:tag "div" :className "text-xl text-gray-700"}
-    (Element {:tag "span" :className "text-2xl mr-2"} emoji)
-    (Element {:tag "strong" :className "font-semibold text-koi-orange"} "Hello, " name "!")))
+  (Element {:tag "div"
+            :className (use-sx {:font-size "1.25rem"
+                                :color :palette.text.primary})}
+    (Element {:tag "span" :className (use-sx {:font-size "1.5rem" :mr 1})} emoji)
+    (Element {:tag "strong" :className (use-sx {:font-weight 600
+                                                :color :palette.primary.main})}
+      "Hello, " name "!")))
 
 (defnc CardWithChildren
   [{:keys [title children]}]
-  (Element {:tag "div" :className "card"}
-    (Element {:tag "h3" :className "card-title"} title)
-    (Element {:tag "div" :className "card-content"} children)))
+  (Card {}
+    (CardTitle {} title)
+    (apply Element {:tag "div"
+                    :className (use-sx {:display :flex :flex-direction :column
+                                        :gap 1 :font-size "0.875rem"
+                                        :color :palette.text.secondary})}
+      children)))
 
 ;; ── Iterating over children ──────────────────────────────────────────────────
 ;; `:children` arrives as a CLJS seq — iterate it directly with `for`.
 
 (defnc NumberedList
   [{:keys [children]}]
-  (Element {:tag "ol"
-            :style {:display "flex"
-                    :flexDirection "column"
-                    :gap "0.5rem"
-                    :padding 0
-                    :margin 0
-                    :listStyle "none"}}
-    (for [[idx item] (map-indexed vector children)]
-      (Element {:tag "li"
-                :key idx
-                :style {:display "flex"
-                        :alignItems "center"
-                        :gap "0.75rem"
-                        :padding "0.5rem 0.75rem"
-                        :background "#f9fafb"
-                        :border "1px solid #e5e7eb"
-                        :borderRadius "0.5rem"}}
-        (Element {:tag "span"
-                  :style {:display "inline-flex"
-                          :alignItems "center"
-                          :justifyContent "center"
-                          :width "1.5rem"
-                          :height "1.5rem"
-                          :borderRadius "9999px"
-                          :background "#f97316"
-                          :color "white"
-                          :fontSize "0.75rem"
-                          :fontWeight 700
-                          :flexShrink 0}}
-          (inc idx))
-        (Element {:tag "div" :style {:flex 1 :fontSize "0.9rem" :color "#374151"}}
-          item)))))
+  ;; Every class is computed here rather than in the loop. `for` is lazy and
+  ;; React realizes it after this render returns, so a `use-sx` in the body
+  ;; would be a hook call with no dispatcher installed.
+  (let [item-cls (use-sx {:display :flex :align-items :center :gap 1.5
+                          :px 1.25 :py 1 :border-radius 1
+                          :bgcolor :palette.surface.sunken
+                          :border "1px solid" :border-color :palette.divider})
+        num-cls  (use-sx {:display :inline-flex :flex-shrink 0
+                          :align-items :center :justify-content :center
+                          :width "1.5rem" :height "1.5rem"
+                          :border-radius "999px"
+                          :bgcolor :palette.primary.main
+                          :color :palette.primary.contrast-text
+                          :font-size "0.75rem" :font-weight 700})
+        text-cls (use-sx {:flex 1 :font-size "0.9rem"
+                          :color :palette.text.primary})]
+    (Element {:tag "ol"
+              :className (use-sx {:display :flex :flex-direction :column :gap 1
+                                  :p 0 :m 0 :list-style :none})}
+      (for [[idx item] (map-indexed vector children)]
+        (Element {:tag "li" :key idx :className item-cls}
+          (Element {:tag "span" :className num-cls} (inc idx))
+          (Element {:tag "div" :className text-cls} item))))))
 
 (defnc IterChildrenDemo []
   (NumberedList nil
@@ -67,44 +71,50 @@
 
 ;; ── Vector of elements passed as a prop ──────────────────────────────────────
 
-(def ^:private breadcrumb-link-style
-  {:color "#f97316"
-   :textDecoration "none"
-   :fontWeight 500})
+(defnc BreadcrumbLink
+  [{:keys [href children]}]
+  (Element {:tag "a" :href href
+            :className (use-sx {:color :palette.primary.main
+                                :text-decoration :none :font-weight 500
+                                :&:hover {:text-decoration :underline}})}
+    children))
 
-(def ^:private breadcrumb-current-style
-  {:color "#374151"
-   :fontWeight 600})
+(defnc BreadcrumbCurrent
+  [{:keys [children]}]
+  (Element {:tag "span"
+            :className (use-sx {:color :palette.text.primary :font-weight 600})}
+    children))
 
 (defnc Breadcrumbs
   [{:keys [items]}]
-  (Element {:tag "nav"
-            :style {:display "flex"
-                    :flexWrap "wrap"
-                    :alignItems "center"
-                    :gap "0.4rem"
-                    :fontSize "0.9rem"}}
-    (for [[idx item] (map-indexed vector items)]
-      (Element {:tag "span"
-                :key idx
-                :style {:display "flex"
-                        :alignItems "center"
-                        :gap "0.4rem"}}
-        (when (pos? idx)
-          (Element {:tag "span" :style {:color "#cbd5e1"}} "/"))
-        item))))
+  (let [seg-cls (use-sx {:display :flex :align-items :center :gap 0.5})
+        sep-cls (use-sx {:color :palette.text.disabled})]
+    (Element {:tag "nav"
+              :className (use-sx {:display :flex :flex-wrap :wrap
+                                  :align-items :center :gap 0.5
+                                  :font-size "0.9rem"})}
+      (for [[idx item] (map-indexed vector items)]
+        (Element {:tag "span" :key idx :className seg-cls}
+          (when (pos? idx)
+            (Element {:tag "span" :className sep-cls} "/"))
+          item)))))
 
 (defnc VectorPropDemo []
   (Breadcrumbs
-    {:items [(Element {:tag "a" :href "#" :style breadcrumb-link-style} "Home")
-             (Element {:tag "a" :href "#" :style breadcrumb-link-style} "Library")
-             (Element {:tag "a" :href "#" :style breadcrumb-link-style} "Topics")
-             (Element {:tag "span" :style breadcrumb-current-style} "ClojureScript")]}))
+    {:items [(BreadcrumbLink {:href "#"} "Home")
+             (BreadcrumbLink {:href "#"} "Library")
+             (BreadcrumbLink {:href "#"} "Topics")
+             (BreadcrumbCurrent {} "ClojureScript")]}))
 
 ;; ── JS interop: props ─────────────────────────────────────────────────────────
-;; Raw React function components — pretend these came from an npm package.
-;; Each one uses `react/createElement` directly so no CLJS machinery is involved
-;; on the component side.
+;; Raw React function components — pretend these came from an npm package. Each
+;; one uses `react/createElement` directly, so no CLJS machinery is involved on
+;; the component side, and none of them requires `cljs.react.sx`.
+;;
+;; They still follow the theme, because sx puts every theme value behind a CSS
+;; custom property. `var(--cx-…)` is plain CSS: it crosses the interop boundary
+;; with no adapter, and these components stay legible in dark mode without
+;; knowing the theme exists.
 
 (def RawBadge
   (fn [^js props]
@@ -112,8 +122,8 @@
       #js {:style #js {:display "inline-block"
                        :padding "0.25rem 0.75rem"
                        :borderRadius "9999px"
-                       :background "#dbeafe"
-                       :color "#1e40af"
+                       :background "var(--cx-palette-info-main)"
+                       :color "var(--cx-palette-info-contrast-text)"
                        :fontSize "0.75rem"
                        :fontWeight 700
                        :letterSpacing "0.05em"
@@ -134,32 +144,37 @@
       #js {:type "button"
            :onClick (.-onClick props)
            :style #js {:padding "0.5rem 1rem"
-                       :borderRadius "0.5rem"
-                       :border "1px solid #d1d5db"
-                       :background "white"
+                       :borderRadius "var(--cx-shape-border-radius)"
+                       :border "1px solid var(--cx-palette-divider)"
+                       :background "var(--cx-palette-background-paper)"
+                       :color "var(--cx-palette-text-primary)"
                        :cursor "pointer"
                        :fontSize "0.9rem"}}
       (.-label props))))
 
 (defnc ClickDemo []
   (let [clicks (use-state 0)]
-    (Element {:tag "div" :style {:display "flex" :gap "0.75rem" :alignItems "center"}}
+    (Row {:gap 1.5}
       (Element {:tag RawButton :label "Click me" :onClick #(swap! clicks inc)})
-      (Element {:tag "span"} "Clicks: " @clicks))))
+      (Element {:tag "span"
+                :className (use-sx {:font-size "0.875rem"
+                                    :color :palette.text.secondary})}
+        "Clicks: " @clicks))))
 
 ;; ── JS interop: children ──────────────────────────────────────────────────────
 
 (def RawPanel
   (fn [^js props]
     (react/createElement "div"
-      #js {:style #js {:border "2px dashed #cbd5e1"
-                       :borderRadius "0.5rem"
+      #js {:style #js {:border "2px dashed var(--cx-palette-divider)"
+                       :borderRadius "var(--cx-shape-border-radius)"
                        :padding "1rem"
-                       :background "#f8fafc"}}
+                       :background "var(--cx-palette-surface-sunken)"
+                       :color "var(--cx-palette-text-secondary)"}}
       (react/createElement "div"
         #js {:style #js {:fontWeight 600
                          :marginBottom "0.5rem"
-                         :color "#475569"}}
+                         :color "var(--cx-palette-text-primary)"}}
         (.-title props))
       (.-children props))))
 
@@ -171,48 +186,34 @@
       (react/createElement "input"
         #js {:ref ref
              :type "text"
-             :className "demo-js-input"
              :placeholder (.-placeholder props)
              :style #js {:padding "0.5rem 0.75rem"
-                         :border "2px solid #e5e7eb"
-                         :borderRadius "0.5rem"
+                         :border "2px solid var(--cx-palette-divider)"
+                         :borderRadius "var(--cx-shape-border-radius)"
+                         :background "var(--cx-palette-background-paper)"
+                         :color "var(--cx-palette-text-primary)"
                          :fontSize "0.9rem"}}))))
 
 (defnc FocusDemo []
-  (let [input-ref (use-ref nil)
-        btn-style {:padding "0.5rem 0.9rem"
-                   :border "1px solid #d1d5db"
-                   :borderRadius "0.5rem"
-                   :background "white"
-                   :cursor "pointer"
-                   :fontSize "0.9rem"
-                   :whiteSpace "nowrap"}]
-    (Element {:tag "div"
-              :style {:display "flex"
-                      :flexWrap "wrap"
-                      :gap "0.5rem"
-                      :alignItems "center"}}
+  (let [input-ref (use-ref nil)]
+    (Row {:gap 1}
       (Element {:tag RawTextBox
                 :ref input-ref
                 :placeholder "Some text to select"
                 :defaultValue "Hello from CLJS"})
-      (Element {:tag "button"
-                :type "button"
-                :onClick #(when-let [el @input-ref] (.focus el))
-                :style btn-style}
+      (Btn {:variant :secondary :size :sm
+            :onClick #(when-let [el @input-ref] (.focus el))}
         "Focus")
-      (Element {:tag "button"
-                :type "button"
-                :onClick #(when-let [el @input-ref]
-                            (.focus el)
-                            (.select el))
-                :style btn-style}
+      (Btn {:variant :secondary :size :sm
+            :onClick #(when-let [el @input-ref]
+                        (.focus el)
+                        (.select el))}
         "Select all"))))
 
 (defnc BasicsTab
   []
   (Section
-    (H2 "🧱 Basic Components")
+    (SectionTitle {} "🧱 Basic Components")
 
     (CodeAndOutput
      {:title "Simple Component"
@@ -226,7 +227,7 @@
 
     (CodeAndOutput
      {:title "Children Passing"
-      :code "(defnc CardWithChildren\n  [{:keys [title children]}]\n  (Element {:tag \"div\" :className \"card\"}\n    (Element {:tag \"h3\"} title)\n    (Element {:tag \"div\"} children)))\n\n(CardWithChildren {:title \"Card Title\"}\n  (Element {:tag \"p\"} \"Content 1\")\n  (Element {:tag \"p\"} \"Content 2\"))"}
+      :code "(defnc CardWithChildren\n  [{:keys [title children]}]\n  (Card {}\n    (CardTitle {} title)\n    ;; children is a seq — spread it\n    (apply Element {:tag \"div\"} children)))\n\n(CardWithChildren {:title \"Card Title\"}\n  (Element {:tag \"p\"} \"Content 1\")\n  (Element {:tag \"p\"} \"Content 2\"))"}
      (CardWithChildren {:title "Card Title"}
        (Element {:tag "p"} "This is the card content.")
        (Element {:tag "p"} "Multiple children are supported!")))
@@ -238,13 +239,13 @@
 
     (CodeAndOutput
      {:title "Vector of Elements as a Prop"
-      :code ";; Elements are plain CLJS data — pass them through any prop key.\n\n(defnc Breadcrumbs\n  [{:keys [items]}]\n  (Element {:tag \"nav\"}\n    (for [[idx item] (map-indexed vector items)]\n      (Element {:tag \"span\" :key idx}\n        (when (pos? idx)\n          (Element {:tag \"span\"} \"/\"))\n        item))))\n\n(Breadcrumbs\n  {:items [(Element {:tag \"a\" :href \"#\"} \"Home\")\n           (Element {:tag \"a\" :href \"#\"} \"Library\")\n           (Element {:tag \"a\" :href \"#\"} \"Topics\")\n           (Element {:tag \"span\"} \"ClojureScript\")]})"}
+      :code ";; Elements are data — pass them via any prop.\n\n(defnc Breadcrumbs\n  [{:keys [items]}]\n  (Element {:tag \"nav\"}\n    (for [[idx item] (map-indexed vector items)]\n      (Element {:tag \"span\" :key idx}\n        (when (pos? idx)\n          (Element {:tag \"span\"} \"/\"))\n        item))))\n\n(Breadcrumbs\n  {:items [(BreadcrumbLink {:href \"#\"} \"Home\")\n           (BreadcrumbLink {:href \"#\"} \"Library\")\n           (BreadcrumbCurrent {} \"ClojureScript\")]})"}
      (VectorPropDemo))
 
     (CodeAndOutput
      {:title "Interop — Using a JS Component"
-      :code ";; Pass any JS component as :tag — keyword props become JS props.\n\n(Element {:tag RawBadge :label \"New\"})\n(Element {:tag RawBadge :label \"Beta\"})\n(Element {:tag RawBadge :label \"Alpha\"})"}
-     (Element {:tag "div" :style {:display "flex" :gap "0.5rem" :flexWrap "wrap"}}
+      :code ";; Any JS component works as :tag.\n;; It reads var(--cx-…), so it follows the theme.\n\n(Element {:tag RawBadge :label \"New\"})\n(Element {:tag RawBadge :label \"Beta\"})\n(Element {:tag RawBadge :label \"Alpha\"})"}
+     (Row {:gap 1}
        (Element {:tag RawBadge :label "New"})
        (Element {:tag RawBadge :label "Beta"})
        (Element {:tag RawBadge :label "Alpha"})))
@@ -252,7 +253,7 @@
     (CodeAndOutput
      {:title "Interop — Adapting a JS Component"
       :code "(defn Badge [props]\n  (Element (assoc props :tag RawBadge)))\n\n(Badge {:label \"New\"})\n(Badge {:label \"Beta\"})\n(Badge {:label \"Alpha\"})"}
-     (Element {:tag "div" :style {:display "flex" :gap "0.5rem" :flexWrap "wrap"}}
+     (Row {:gap 1}
        (Badge {:label "New"})
        (Badge {:label "Beta"})
        (Badge {:label "Alpha"})))
@@ -271,5 +272,5 @@
 
     (CodeAndOutput
      {:title "Interop — Ref to a JS Component"
-      :code ";; use-ref returns a RefAtom — pass as :ref; @ref is the DOM node.\n\n(defnc FocusDemo []\n  (let [input-ref (use-ref nil)]\n    (Element {:tag \"div\"}\n      (Element {:tag RawTextBox :ref input-ref})\n      (Element {:tag \"button\"\n                :onClick #(when-let [el @input-ref]\n                            (.focus el))}\n        \"Focus\")\n      (Element {:tag \"button\"\n                :onClick #(when-let [el @input-ref]\n                            (.focus el)\n                            (.select el))}\n        \"Select all\"))))"}
+      :code ";; use-ref → RefAtom; @ref is the DOM node.\n\n(defnc FocusDemo []\n  (let [input-ref (use-ref nil)]\n    (Element {:tag \"div\"}\n      (Element {:tag RawTextBox :ref input-ref})\n      (Element {:tag \"button\"\n                :onClick #(when-let [el @input-ref]\n                            (.focus el))}\n        \"Focus\")\n      (Element {:tag \"button\"\n                :onClick #(when-let [el @input-ref]\n                            (.focus el)\n                            (.select el))}\n        \"Select all\"))))"}
      (FocusDemo))))

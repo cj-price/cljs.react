@@ -1,8 +1,7 @@
 (ns cljs.react.demo.util
-  (:require ["prismjs" :as Prism]
-            ["prismjs/components/prism-clojure"]
-            [cljs.react.core :refer [Element]])
-  (:require-macros [cljs.react.core :refer [defnc]]))
+  "Thin tag wrappers. Deliberately styling-free and dependency-free — the
+  design system lives in `cljs.react.demo.ui`, which requires this namespace."
+  (:require [cljs.react.core :refer [Element]]))
 
 (defn- el [tag args]
   (if (map? (first args))
@@ -31,17 +30,3 @@
 (defn Code    [& args] (el "code" args))
 (defn Ul      [& args] (el "ul" args))
 (defn Li      [& args] (el "li" args))
-
-(defnc CodeAndOutput
-  [{:keys [code title children]}]
-  (Div {:className "code-and-output"}
-    (when title (H4 title))
-    (Div {:className "demo-columns"}
-      (Div
-        (Pre {:className "language-clojure"}
-          (Code {:className "language-clojure"
-                 :dangerouslySetInnerHTML
-                 {:__html (.highlight Prism code
-                            (.-clojure (.-languages Prism))
-                            "clojure")}})))
-      (Div {:className "demo-output"} children))))

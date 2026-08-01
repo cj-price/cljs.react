@@ -1,45 +1,52 @@
 (ns cljs.react.demo.state
   (:require [cljs.react.core :refer [use-state]]
-            [cljs.react.demo.util :refer [CodeAndOutput Div P H2 Span
-                                          Button Input Section Ul Li]])
-  (:require-macros [cljs.react.core :refer [defnc]]))
+            [cljs.react.sx :refer [use-sx]]
+            [cljs.react.demo.ui :refer [CodeAndOutput Btn Row Stack
+                                               TextInput SectionTitle Badge]]
+            [cljs.react.demo.util :refer [Div P Span Input Section Ul Li]])
+  (:require-macros [cljs.react.core :refer [defnc]]
+                   [cljs.react.sx :refer [defstyle]]))
 
 (defnc Counter
   []
   (let [count (use-state 0)]
-    (Div {:className "space-y-4"}
-      (Div {:className "text-center"}
-        (Div {:className "text-5xl font-bold text-koi-orange mb-2"} @count)
-        (P {:className "text-sm text-gray-600"} "Current Count"))
-      (Div {:className "flex gap-2 justify-center"}
-        (Button {:className "px-6 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300"
-                 :onClick #(swap! count dec)}
-          "−")
-        (Button {:className "px-6 py-2 bg-gray-100 text-gray-600 rounded-lg font-medium hover:bg-gray-200"
-                 :onClick #(reset! count 0)}
-          "Reset")
-        (Button {:className "px-6 py-2 bg-koi-orange text-white rounded-lg font-medium shadow-lg"
-                 :onClick #(swap! count inc)}
-          "+")))))
+    (Stack {:gap 2 :align :center}
+      (Div {:className (use-sx {:font-size "3rem" :font-weight 700
+                                :line-height 1
+                                :font-family :typography.font-family-mono
+                                :color :palette.primary.main})}
+        @count)
+      (P {:className (use-sx {:font-size "0.75rem" :text-transform :uppercase
+                              :letter-spacing "0.06em"
+                              :color :palette.text.secondary})}
+        "Current count")
+      (Row {:gap 1 :justify :center}
+        (Btn {:variant :secondary :onClick #(swap! count dec)} "−")
+        (Btn {:variant :ghost :onClick #(reset! count 0)} "Reset")
+        (Btn {:onClick #(swap! count inc)} "+")))))
 
-(defnc TextInput
+(defnc TextInputDemo
   []
   (let [text (use-state "")]
-    (Div {:className "space-y-3"}
-      (Input {:type "text"
-              :value @text
-              :placeholder "Type something..."
-              :className "w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-koi-orange transition-colors"
-              :onChange #(reset! text (-> % .-target .-value))})
-      (Div {:className "flex justify-between text-sm"}
-        (P {:className "text-gray-600"}
+    (Stack {:gap 1.5}
+      (TextInput {:value @text
+                  :placeholder "Type something…"
+                  :onChange #(reset! text (-> % .-target .-value))})
+      (Row {:justify :space-between :gap 1}
+        (P {:className (use-sx {:font-size "0.875rem"
+                                :color :palette.text.secondary})}
           "You typed: "
-          (Span {:className "font-medium text-gray-900"}
+          (Span {:className (use-sx {:font-weight 500
+                                     :color :palette.text.primary})}
             (if (empty? @text) "(nothing)" @text)))
-        (P {:className "text-gray-500"}
-          "Characters: "
-          (Span {:className "font-semibold text-koi-orange"}
-            (count @text)))))))
+        (Badge {:tone :primary} (count @text) " chars")))))
+
+(defstyle todo-row
+  {:display :flex :align-items :center :gap 1.5 :p 1.25
+   :bgcolor :palette.background.paper
+   :border "1px solid" :border-color :palette.divider
+   :border-radius 1 :transition "border-color 140ms ease"
+   :&:hover {:border-color :palette.grey.300}})
 
 (defnc TodoList
   []
@@ -62,46 +69,62 @@
                       (swap! todos (fn [ts]
                                      (filterv (fn [todo] (not= (:id todo) id)) ts))))
         remaining (count (remove :done @todos))]
-    (Div {:className "w-full space-y-3"}
-      (Div {:className "flex items-center justify-between"}
-        (Span {:className "text-sm font-semibold text-gray-700"} "Tasks")
-        (Span {:className "text-xs font-mono px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full"}
-          remaining " of " (count @todos) " left"))
-      (Div {:className "flex gap-2"}
-        (Input {:type "text"
-                :value @input
-                :placeholder "Add a todo…"
-                :className "flex-1 min-w-0 px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-koi-orange focus:ring-2 focus:ring-koi-orange/20 outline-none transition-all text-sm"
-                :onKeyPress #(when (= (.-key %) "Enter") (add-todo))
-                :onChange #(reset! input (-> % .-target .-value))})
-        (Button {:className "px-4 py-2 bg-koi-orange text-white rounded-lg font-medium shadow hover:bg-orange-600 transition-colors text-sm"
-                 :onClick add-todo}
-          "Add"))
-      (if (empty? @todos)
-        (Div {:className "py-6 text-center text-sm text-gray-400 italic border-2 border-dashed border-gray-200 rounded-lg"}
-          "No tasks yet — add one above.")
-        (Ul {:className "space-y-1.5"}
-          (for [todo @todos]
-            (Li {:key (str (:id todo))
-                 :className "flex items-center gap-3 p-2.5 bg-white border border-gray-200 rounded-lg group hover:border-gray-300 transition-colors"}
-              (Input {:type "checkbox"
-                      :checked (:done todo)
-                      :className "h-4 w-4 cursor-pointer accent-orange-500 flex-shrink-0"
-                      :onChange #(toggle-todo (:id todo))})
-              (Span {:className (str "flex-1 text-sm "
-                                     (if (:done todo)
-                                       "line-through text-gray-400"
-                                       "text-gray-800"))}
-                (:text todo))
-              (Button {:className "flex-shrink-0 w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors text-lg leading-none"
-                       :aria-label "Remove todo"
-                       :onClick #(remove-todo (:id todo))}
-                "×"))))))))
+    (Stack {:gap 1.5}
+      (Row {:justify :space-between}
+        (Span {:className (use-sx {:font-size "0.875rem" :font-weight 600
+                                   :color :palette.text.primary})}
+          "Tasks")
+        (Badge {:tone :neutral} remaining " of " (count @todos) " left"))
+
+      (Row {:gap 1 :wrap? false}
+        (TextInput {:value @input
+                    :placeholder "Add a todo…"
+                    :onKeyDown #(when (= (.-key %) "Enter") (add-todo))
+                    :onChange #(reset! input (-> % .-target .-value))})
+        (Btn {:onClick add-todo} "Add"))
+
+      ;; Classes hoisted out of the loop: `for` is lazy, so a `use-sx` in the
+      ;; body would run after this render returned, with no hook dispatcher.
+      (let [row-cls   (use-sx todo-row)
+            check-cls (use-sx {:width "1rem" :height "1rem"
+                               :flex-shrink 0 :cursor :pointer
+                               :accent-color :palette.primary.main})
+            label-cls (use-sx {:flex 1 :font-size "0.875rem"
+                               :color :palette.text.primary})
+            done-cls  (use-sx [{:flex 1 :font-size "0.875rem"}
+                               {:text-decoration :line-through
+                                :color :palette.text.disabled}])
+            ;; Both branches' classes, computed unconditionally — a hook that
+            ;; runs in only one arm of the `if` changes the render's hook count.
+            empty-cls (use-sx {:py 3 :text-align :center :font-size "0.875rem"
+                               :font-style :italic
+                               :color :palette.text.disabled
+                               :border "2px dashed" :border-color :palette.divider
+                               :border-radius 1})
+            list-cls  (use-sx {:display :flex :flex-direction :column :gap 1
+                               :list-style :none})]
+        (if (empty? @todos)
+          (Div {:className empty-cls}
+            "No tasks yet — add one above.")
+          (Ul {:className list-cls}
+            (for [todo @todos]
+              (Li {:key (str (:id todo))
+                   :className row-cls}
+                (Input {:type "checkbox"
+                        :checked (:done todo)
+                        :className check-cls
+                        :onChange #(toggle-todo (:id todo))})
+                (Span {:className (if (:done todo) done-cls label-cls)}
+                  (:text todo))
+                (Btn {:variant :ghost :size :sm
+                      :aria-label "Remove todo"
+                      :onClick #(remove-todo (:id todo))}
+                  "×")))))))))
 
 (defnc StateTab
   []
   (Section
-    (H2 "📊 State Management")
+    (SectionTitle {} "📊 State Management")
 
     (CodeAndOutput
      {:title "Counter with useState"
@@ -111,7 +134,7 @@
     (CodeAndOutput
      {:title "Text Input"
       :code "(defnc TextInput\n  []\n  (let [text (use-state \"\")]\n    (Div\n      (Input {:value @text\n              :onChange #(reset! text\n                          (-> % .-target .-value))})\n      (P \"You typed: \" @text))))"}
-     (TextInput))
+     (TextInputDemo))
 
     (CodeAndOutput
      {:title "Todo List"

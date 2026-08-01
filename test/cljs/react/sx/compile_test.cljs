@@ -245,7 +245,35 @@
   (testing "ordinary keyword values still compile"
     (is (= ".c{display:flex}" (css1 {:display :flex})))
     (is (= ".c{color:var(--cx-palette-primary-main)}"
-           (css1 {:color :palette.primary.main})))))
+           (css1 {:color :palette.primary.main}))))
+
+  (testing "a value that escapes by consuming forward, not by emitting a brace"
+    ;; None of these contains a rejected character, and none makes insertRule
+    ;; throw — the parser ACCEPTS the rule and silently drops what follows.
+    ;; A trailing backslash escapes the `}` this library appends; an unbalanced
+    ;; `(` opens a block that runs to EOF; an escaped quote leaves the string
+    ;; unterminated while keeping the quote COUNT even, which is all the old
+    ;; check measured. A stray `)` or `]` closes a construct it never opened.
+    (doseq [v ["red\\" "rgb(" "\"a\\\"" "red)" "a]" "url(a.png"]]
+      (is (= :cljs.react.sx.compile/unsafe-value (ex-type {:color v}))
+          (pr-str v))))
+
+  (testing "interleaved delimiters are rejected — both counts balance"
+    (doseq [v ["([)]" "[(])" "a([b)]"]]
+      (is (= :cljs.react.sx.compile/unsafe-value (ex-type {:color v}))
+          (pr-str v))))
+
+  (testing "a raw newline inside a quoted run is rejected"
+    (doseq [v ["\"a\nb\"" "'a\nb'" "\"a\rb\""]]
+      (is (= :cljs.react.sx.compile/unsafe-value (ex-type {:content v}))
+          (pr-str v))))
+
+  (testing "a newline BETWEEN quoted strings still passes"
+    (is (string? (css1 {:grid-template-areas "\"a a\"\n\"b b\""}))))
+
+  (testing "balanced delimiters, including escapes inside strings, still pass"
+    (doseq [v ["rgb(1, 2, 3)" "calc(var(--x) * 2)" "\"a(b\"" "attr(data-x)"]]
+      (is (string? (css1 {:color v})) (pr-str v)))))
 
 (deftest non-scalar-values-test
   (testing "a value that is not nil/keyword/number/string is rejected"
@@ -274,6 +302,15 @@
                "&[disabled]" "& + &"]]
       (is (nil? (ex-type {k {:margin 0}})) (pr-str k))))
 
+  (testing "a selector that opens a delimiter it never closes is rejected"
+    ;; The charset admits ( ) [ ] with no pairing requirement, so `&:has(.a`
+    ;; emitted `.c:has(.a{margin:0}` — one unclosed function that swallows
+    ;; every rule appended after it on the dev text-node path, where nothing
+    ;; re-parses. insertRule rejects it, so this failed in dev only.
+    (doseq [k ["&:has(.a" "&[data-x" "&)" "&(" "&]" "&:not(.x))"]]
+      (is (= :cljs.react.sx.compile/invalid-selector (ex-type {k {:margin 0}}))
+          (pr-str k))))
+
   (testing "at-rule keys are an allowlist, not a passthrough"
     (is (nil? (ex-type {"@media print" {:color "red"}})))
     (is (nil? (ex-type {"@supports (display: grid)" {:display :grid}})))
@@ -282,6 +319,11 @@
            (ex-type {"@import url(evil.css)" {:color "red"}})))
     (is (= :cljs.react.sx.compile/invalid-at-rule
            (ex-type {"@media print{}body" {:color "red"}}))))
+
+  (testing "an at-rule that opens a delimiter it never closes is rejected"
+    (doseq [k ["@media (min-width:600px" "@media ([)]" "@supports (display: grid))"]]
+      (is (= :cljs.react.sx.compile/invalid-at-rule (ex-type {k {:color "red"}}))
+          (pr-str k))))
 
   (testing "a property name that is not a property name is rejected"
     (is (= :cljs.react.sx.compile/invalid-property
@@ -406,6 +448,121 @@
     (let [a {:&:hover {:color "a" :p 1} :width {:md 2 :xs 1} :m 3}
           b {:m 3 :width {:xs 1 :md 2} :&:hover {:p 1 :color "a"}}]
       (is (= (css a) (css b))))))
+
+(defn- kf-type
+  "The `:type` of the ex-info `frames` throws, or nil if it compiles."
+  [frames]
+  (try (sxc/keyframes->body frames) nil (catch :default e (:type (ex-data e)))))
+
+(deftest keyframes-test
+  (testing "from and to canonicalize to offsets"
+    (is (= "0%{opacity:0}100%{opacity:1}"
+           (sxc/keyframes->body {:from {:opacity 0} :to {:opacity 1}}))))
+
+  (testing "numbers, percentage strings and decimals"
+    (is (= "0%{opacity:0}50%{opacity:0.5}100%{opacity:1}"
+           (sxc/keyframes->body {0 {:opacity 0} 50 {:opacity 0.5}
+                                 100 {:opacity 1}})))
+    (is (= "33.3%{opacity:1}" (sxc/keyframes->body {"33.3%" {:opacity 1}})))
+    (is (= "25%{opacity:1}" (sxc/keyframes->body {:25% {:opacity 1}}))))
+
+  (testing "a vector key is the multi-selector form"
+    (is (= "0%,100%{opacity:1}50%{opacity:0}"
+           (sxc/keyframes->body {[0 100] {:opacity 1} 50 {:opacity 0}}))))
+
+  (testing "frames emit in ascending offset order regardless of authoring order"
+    ;; The body is hashed into the keyframes name, so two `=` frames maps that
+    ;; emitted different text would register two names and two rules.
+    (is (= (sxc/keyframes->body {:to {:opacity 1} :from {:opacity 0}})
+           (sxc/keyframes->body {:from {:opacity 0} :to {:opacity 1}})))
+    (let [m   (array-map 90 {:opacity 0.9} 10 {:opacity 0.1} 20 {:opacity 0.2}
+                         30 {:opacity 0.3} 40 {:opacity 0.4} 50 {:opacity 0.5}
+                         60 {:opacity 0.6} 70 {:opacity 0.7} 80 {:opacity 0.8}
+                         100 {:opacity 1})
+          phm (into (hash-map) m)]
+      (is (= m phm) "test setup: the two maps must be equal")
+      (is (not (identical? (type m) (type phm)))
+          "test setup: the two maps must have different implementations")
+      (is (= (sxc/keyframes->body m) (sxc/keyframes->body phm)))))
+
+  (testing "a frame is a full sx map, not a second dialect"
+    (is (= "0%{padding:calc(var(--cx-spacing) * 2)}"
+           (sxc/keyframes->body {:from {:p 2}})))
+    (is (= "0%{color:var(--cx-palette-primary-main)}"
+           (sxc/keyframes->body {:from {:color :palette.primary.main}})))
+    (is (= "0%{content:\"x\"}" (sxc/keyframes->body {:from {:content "x"}})))
+    (is (= "0%{background-color:red}"
+           (sxc/keyframes->body {:from {:bgcolor "red"}})))
+    (is (= "0%{padding:calc(var(--cx-spacing) * 1);padding-top:calc(var(--cx-spacing) * 2)}"
+           (sxc/keyframes->body {:from {:p 1 :pt 2}}))
+        "shorthand still emits before longhand")
+    (is (= "0%{opacity:1}"
+           (sxc/keyframes->body {:from {:opacity 1 :color nil}}))
+        "a nil declaration is dropped, as everywhere else"))
+
+  (testing "values inside a frame hit the same trust boundary"
+    (is (= :cljs.react.sx.compile/unsafe-value
+           (kf-type {:from {:color "red}#victim{color:blue"}})))
+    (is (= :cljs.react.sx.compile/invalid-value
+           (kf-type {:from {:opacity true}}))))
+
+  (testing "an empty body is rejected here, because nothing downstream will"
+    ;; `@keyframes x{}` is syntactically valid, so insertRule accepts it in
+    ;; release exactly as the dev text node does.
+    (is (= :cljs.react.sx.compile/empty-keyframes (kf-type {})))
+    (is (= :cljs.react.sx.compile/empty-keyframes (kf-type {:from {}})))
+    (is (= :cljs.react.sx.compile/empty-keyframes
+           (kf-type {:from {:color nil}}))))
+
+  (testing "invalid selectors"
+    (is (= :cljs.react.sx.compile/invalid-keyframe-selector (kf-type {"50" {:opacity 1}})))
+    (is (= :cljs.react.sx.compile/invalid-keyframe-selector (kf-type {"110%" {:opacity 1}})))
+    (is (= :cljs.react.sx.compile/invalid-keyframe-selector (kf-type {110 {:opacity 1}})))
+    (is (= :cljs.react.sx.compile/invalid-keyframe-selector (kf-type {-10 {:opacity 1}})))
+    (is (= :cljs.react.sx.compile/invalid-keyframe-selector (kf-type {"from, to" {:opacity 1}})))
+    (is (= :cljs.react.sx.compile/invalid-keyframe-selector (kf-type {:hover {:opacity 1}})))
+    (is (= :cljs.react.sx.compile/invalid-keyframe-selector (kf-type {[] {:opacity 1}}))))
+
+  (testing "duplicate offsets after canonicalization"
+    (is (= :cljs.react.sx.compile/duplicate-keyframe
+           (kf-type {:from {:opacity 0} "0%" {:opacity 1}})))
+    (is (= :cljs.react.sx.compile/duplicate-keyframe
+           (kf-type {:to {:opacity 0} 100 {:opacity 1}})))
+    (is (= :cljs.react.sx.compile/duplicate-keyframe
+           (kf-type {[0 0] {:opacity 1}}))))
+
+  (testing "a frame holds declarations only"
+    (is (= :cljs.react.sx.compile/invalid-keyframe-body
+           (kf-type {:from {:&:hover {:opacity 1}}})))
+    (is (= :cljs.react.sx.compile/invalid-keyframe-body
+           (kf-type {:from {"@media print" {:opacity 1}}})))
+    (is (= :cljs.react.sx.compile/invalid-keyframe-body
+           (kf-type {:from {:width {:xs 1 :md 2}}})))
+    (is (= :cljs.react.sx.compile/invalid-keyframe-body
+           (kf-type {:from "opacity:1"})))
+    (is (= :cljs.react.sx.compile/invalid-keyframes (kf-type "from{}")))))
+
+(deftest time-value-test
+  ;; `<time>` has no unitless form, zero included — so every bare number here
+  ;; would emit `Npx` and be discarded, the same silent-drop shape the
+  ;; box-shadow and content cases already guard.
+  (testing "a bare number is refused rather than guessed at"
+    (is (= :cljs.react.sx.compile/invalid-time-value (ex-type {:animation-duration 1})))
+    (is (= :cljs.react.sx.compile/invalid-time-value (ex-type {:animation-delay 0})))
+    (is (= :cljs.react.sx.compile/invalid-time-value (ex-type {:transitionDuration 2})))
+    (is (= :cljs.react.sx.compile/invalid-time-value (ex-type {:transition-delay 0})))
+    (is (= :cljs.react.sx.compile/invalid-time-value
+           (kf-type {:from {:animation-duration 1}}))
+        "inside a keyframe too — same emitter"))
+
+  (testing "strings are the supported spelling"
+    (is (= ".c{animation-duration:200ms}" (css1 {:animation-duration "200ms"})))
+    (is (= ".c{animation-delay:0s}" (css1 {:animation-delay "0s"}))))
+
+  (testing "the shorthand and the iteration count are untouched"
+    (is (= ".c{animation:spin 1s linear}" (css1 {:animation "spin 1s linear"})))
+    (is (= ".c{animation-iteration-count:3}"
+           (css1 {:animation-iteration-count 3})))))
 
 (deftest vars-rule-test
   (testing "renders a declaration block from a sorted var map"
