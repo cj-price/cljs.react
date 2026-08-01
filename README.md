@@ -15,8 +15,13 @@ Git dependency in `deps.edn`:
 {:deps
  {io.github.cj-price/cljs.react
   {:git/url "https://github.com/cj-price/cljs.react.git"
-   :git/sha "<latest commit sha>"}}}
+   :git/tag "v0.2.0"
+   :git/sha "<sha of the tagged commit>"}}}
 ```
+
+Pin a [release tag](https://github.com/cj-price/cljs.react/releases) and its
+commit sha; `clj -X:deps find-versions :lib io.github.cj-price/cljs.react`
+lists them. Tracking a plain `:git/sha` from trunk also works.
 
 Add React as a peer dep in `package.json` (pnpm, npm, or yarn):
 
