@@ -6,7 +6,9 @@
   deep-merges a composition vector into ONE class, so a variant's `&:hover`
   merges with the base's instead of clobbering it."
   (:require ["prismjs" :as Prism]
+            ["prismjs/components/prism-bash"]
             ["prismjs/components/prism-clojure"]
+            ["prismjs/components/prism-json"]
             [cljs.react.core :refer [Element use-state]]
             [cljs.react.sx :as sx :refer [use-sx]]
             [cljs.react.demo.util :refer [Div Span Pre Code Button]])
@@ -481,6 +483,22 @@
    "& .token.operator"    {:color :palette.code.punctuation}
    "& .token.boolean"     {:color :palette.code.number}})
 
+;; `:label` replaces the "ClojureScript" badge baked into `code-block` — a
+;; deep-merged `::before` override, so a snippet can be labelled with its
+;; filename ("deps.edn", "src/app/main.cljs") instead of its language.
+(defnc CodeBlock
+  [{:keys [code label language]}]
+  (let [lang    (or language :clojure)
+        grammar (case lang
+                  :bash (.-bash (.-languages Prism))
+                  :json (.-json (.-languages Prism))
+                  :html (.-markup (.-languages Prism))
+                  (.-clojure (.-languages Prism)))]
+    (Pre {:className (use-sx [code-block
+                              (when label {"&::before" {:content label}})])}
+      (Code {:dangerouslySetInnerHTML
+             {:__html (.highlight Prism code grammar (name lang))}}))))
+
 (defstyle output-pane
   {:display :flex :flex-direction :column :justify-content :center :gap 2
    :min-height "9rem" :p 2 :border-radius 1.5
@@ -546,11 +564,7 @@
           "Result"))
       (Div {:className (use-sx demo-columns)}
         (Div {:className (use-sx {:display {:xs (if code? :block :none) :lg :block}})}
-          (Pre {:className (use-sx code-block)}
-            (Code {:dangerouslySetInnerHTML
-                   {:__html (.highlight Prism code
-                              (.-clojure (.-languages Prism))
-                              "clojure")}})))
+          (CodeBlock {:code code}))
         (Div {:className (use-sx [output-pane
                                   {:display {:xs (if code? :none :flex) :lg :flex}}])}
           children)))))

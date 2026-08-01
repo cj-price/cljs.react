@@ -5,7 +5,7 @@
             ;; regenerates no CSS. Application code never needs this.
             [cljs.react.sx.sheet :as sheet]
             [cljs.react.demo.ui :refer [CodeAndOutput Btn Row Stack
-                                        SectionTitle DemoTitle Caption Muted calm]]
+                                        SectionTitle DemoTitle Caption calm]]
             [cljs.react.demo.util :refer [Div Button Section Span Strong]])
   (:require-macros [cljs.react.core :refer [defnc]]
                    [cljs.react.sx :refer [defstyle]]))
@@ -344,12 +344,6 @@
                             :palette {:primary {:main @colour}}}}
       (Section
         (SectionTitle {} "💅 Styling (sx)")
-        (Muted {:style {:marginBottom "1.5rem" :maxWidth "60ch"}}
-          "MUI-sx-style styling in pure ClojureScript. Write a map of declarations, "
-          "get a class name back. Theme values are indirected through CSS custom "
-          "properties, so a theme swap rewrites one :root block and regenerates "
-          "no CSS — every component keeps the class it already had. "
-          "Every pixel of this site is styled this way.")
 
         (CodeAndOutput {:title "Basics — a map in, a class out" :code basics-code}
           (BasicsDemo))
