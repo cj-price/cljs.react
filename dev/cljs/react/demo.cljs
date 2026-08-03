@@ -14,6 +14,7 @@
             [cljs.react.demo.boundaries :refer [BoundariesTab]]
             [cljs.react.demo.concurrent :refer [ConcurrentTab]]
             [cljs.react.demo.interop :refer [InteropTab]]
+            [cljs.react.demo.reagent :refer [ReagentTab]]
             [cljs.react.demo.mui :refer [MUITab]]
             [cljs.react.demo.sx :refer [SXTab]]
             [cljs.react.demo.util :refer [Div Span H1 Button Header
@@ -40,6 +41,7 @@
    {:title "Interop"
     :sections
     [{:id :interop    :title "Interop"          :emoji "🔌" :view InteropTab}
+     {:id :reagent    :title "Reagent"          :emoji "⚛️" :view ReagentTab}
      {:id :mui        :title "MUI"              :emoji "🎨" :view MUITab}]}
    {:title "Extras"
     :sections
