@@ -15,7 +15,7 @@ Git dependency in `deps.edn`:
 {:deps
  {io.github.cj-price/cljs.react
   {:git/url "https://github.com/cj-price/cljs.react.git"
-   :git/tag "v0.2.0"
+   :git/tag "v0.2.1"
    :git/sha "<sha of the tagged commit>"}}}
 ```
 
