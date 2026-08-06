@@ -6,7 +6,7 @@
    [goog.object :as gobj]
    ["react" :as react]
    ["global-jsdom/register"]
-   ["@testing-library/react" :refer [render renderHook cleanup]]))
+   ["@testing-library/react" :refer [render renderHook cleanup act fireEvent]]))
 
 ;;; clj->js-props
 
@@ -293,6 +293,251 @@
       (is (= "k" (gobj/get js-props "key"))
           ":key is hoisted to the top level so React can see it")
       (is (= "child" child)))))
+
+;;; adapt
+
+(defn- raw-labeled [^js js-props]
+  (react/createElement "span" #js {:id (.-id js-props)} (.-label js-props)))
+
+(defn- raw-children-panel [^js js-props]
+  (react/createElement "div" #js {:id "panel"} (.-children js-props)))
+
+(deftest adapt-props-test
+  (testing "adapted component receives converted JS props"
+    (let [Labeled (component/adapt raw-labeled)
+          result  (render (Labeled {:id "x" :label "hi"}))
+          span    (.. result -container -firstChild)]
+      (is (= "SPAN" (.-tagName span)))
+      (is (= "x" (.-id span)))
+      (is (= "hi" (.-textContent span)))
+      (cleanup))))
+
+(deftest adapt-no-args-test
+  (testing "0-arity renders with nil props"
+    (let [Labeled (component/adapt raw-labeled)
+          result  (render (Labeled))
+          span    (.. result -container -firstChild)]
+      (is (= "SPAN" (.-tagName span)))
+      (is (= "" (.-textContent span)))
+      (cleanup))))
+
+(deftest adapt-children-test
+  (testing "children pass through to props.children"
+    (let [Panel  (component/adapt raw-children-panel)
+          result (render (Panel {}
+                           (react/createElement "p" nil "one")
+                           (react/createElement "p" nil "two")))
+          panel  (.. result -container -firstChild)]
+      (is (= 2 (.. panel -children -length)))
+      (is (= "one" (.. panel -firstChild -textContent)))
+      (is (= "two" (.. panel -lastChild -textContent)))
+      (cleanup))))
+
+(deftest adapt-nested-map-test
+  (testing "nested prop maps arrive as JS objects (e.g. :style)"
+    (let [seen   (atom nil)
+          Probe  (component/adapt (fn [^js p] (reset! seen (.-style p)) nil))
+          _      (render (Probe {:style {:color "red"}}))]
+      (is (object? @seen))
+      (is (= "red" (gobj/get @seen "color")))
+      (cleanup))))
+
+(deftest adapt-key-test
+  (testing ":key in the props map becomes the element's key (extracted by createElement)"
+    (let [Labeled (component/adapt raw-labeled)
+          el      (Labeled {:key "k1" :label "x"})]
+      (is (= "k1" (.-key ^js el))))))
+
+(deftest adapt-custom-renderer-test
+  (testing "elements are created through *create-element* at call time"
+    (let [calls   (atom [])
+          comp-fn (fn [_] nil)
+          Adapted (component/adapt comp-fn)]
+      (binding [component/*create-element*
+                (fn [& args] (swap! calls conj args) :fake-element)]
+        (is (= :fake-element (Adapted {:a 1} "child")))
+        (let [[type js-props child] (first @calls)]
+          (is (identical? comp-fn type))
+          (is (= 1 (gobj/get js-props "a")))
+          (is (= "child" child)))))))
+
+(deftest adapt-empty-props-test
+  (testing "empty props map converts to nil props (no allocation)"
+    (let [calls   (atom [])
+          Adapted (component/adapt (fn [_] nil))]
+      (binding [component/*create-element*
+                (fn [& args] (swap! calls conj args) :fake-element)]
+        (Adapted {})
+        (is (nil? (second (first @calls))))))))
+
+(deftest adapt-invalid-component-throws-test
+  (testing "nil, numbers, plain objects, and module namespace objects throw at wrap time"
+    (doseq [bad [nil 42 true #js {} #js {:default (fn [_] nil)}]]
+      (let [e (try (component/adapt bad) (catch :default e e))]
+        (is (= ::component/adapt-invalid-component (:type (ex-data e)))
+            (str "expected typed throw for " (pr-str bad)))))))
+
+(deftest adapt-module-object-hint-test
+  (testing "a module namespace object's error message hints at the missing $default"
+    (let [e (try (component/adapt #js {:default (fn [_] nil)}) (catch :default e e))]
+      (is (some? (re-find #"\$default" (ex-message e)))))))
+
+(deftest adapt-cljs-wrapper-throws-test
+  (testing "a fn carrying the defnc wrapper marker is rejected"
+    (let [f (fn [_] nil)]
+      (unchecked-set f "cljsReactWrapper" true)
+      (let [e (try (component/adapt f) (catch :default e e))]
+        (is (= ::component/adapt-cljs-component (:type (ex-data e))))))))
+
+(deftest adapt-non-map-props-throws-test
+  (testing "non-map props throw a typed ex-info instead of an opaque protocol error"
+    (let [Labeled (component/adapt raw-labeled)]
+      (doseq [bad ["Save" [1 2] 42 #js {:label "x"}]]
+        (let [e (try (Labeled bad) (catch :default e e))]
+          (is (= ::component/adapt-invalid-props (:type (ex-data e)))
+              (str "expected typed throw for props " (pr-str bad))))))))
+
+(deftest adapt-nil-props-test
+  (testing "explicit nil props works on the 1-arity and children arities"
+    (let [Labeled (component/adapt raw-labeled)
+          r1      (render (Labeled nil))]
+      (is (= "SPAN" (.-tagName (.. r1 -container -firstChild))))
+      (cleanup))
+    (let [Panel (component/adapt raw-children-panel)
+          r2    (render (Panel nil (react/createElement "p" nil "c")))]
+      (is (= 1 (.. r2 -container -firstChild -children -length)))
+      (cleanup))))
+
+(deftest adapt-children-arities-test
+  (testing "1 through 5 children flow through the fixed and variadic arities"
+    (doseq [n [1 2 3 4 5]]
+      (let [Panel  (component/adapt raw-children-panel)
+            kids   (map #(react/createElement "i" #js {:key %} (str %)) (range n))
+            result (render (apply Panel {} kids))
+            panel  (.. result -container -firstChild)]
+        (is (= n (.. panel -children -length)) (str n " children"))
+        (is (= (apply str (range n)) (.-textContent panel)))
+        (cleanup)))))
+
+(def ^:private raw-forward-input
+  (react/forwardRef
+    (fn [^js props ref]
+      (react/createElement "input" #js {:ref ref :id (.-id props)}))))
+
+(deftest adapt-refatom-forwardref-test
+  (testing "a RefAtom under :ref unwraps and receives the DOM node end-to-end"
+    (let [ref-atom (hook/->RefAtom #js {:current nil})
+          Input    (component/adapt raw-forward-input)
+          _        (render (Input {:ref ref-atom :id "adapted-input"}))]
+      (is (some? @ref-atom))
+      (is (= "INPUT" (.-tagName @ref-atom)))
+      (is (= "adapted-input" (.-id @ref-atom)))
+      (cleanup))))
+
+(deftest adapt-memo-exotic-type-test
+  (testing "a react/memo exotic type passes the guard and renders"
+    (let [Memo   (component/adapt
+                   (react/memo (fn [^js p] (react/createElement "b" nil (.-t p)))))
+          result (render (Memo {:t "memoized"}))]
+      (is (= "memoized" (.-textContent (.. result -container -firstChild))))
+      (cleanup))))
+
+(deftest adapt-string-tag-test
+  (testing "a string tag works (curried Element behavior)"
+    (let [Div    (component/adapt "div")
+          result (render (Div {:id "d"} "x"))
+          node   (.. result -container -firstChild)]
+      (is (= "DIV" (.-tagName node)))
+      (is (= "d" (.-id node)))
+      (is (= "x" (.-textContent node)))
+      (cleanup))))
+
+(deftest adapt-fragment-test
+  (testing "a symbol type (Fragment) passes the guard and groups children"
+    (let [Frag   (component/adapt react/Fragment)
+          result (render (Frag {}
+                           (react/createElement "i" #js {:key "a"} "a")
+                           (react/createElement "i" #js {:key "b"} "b")))]
+      (is (= 2 (.. result -container -children -length)))
+      (is (= "ab" (.. result -container -textContent)))
+      (cleanup))))
+
+(deftest adapt-element-throws-test
+  (testing "a React element (an already-called component) is rejected at wrap time"
+    (doseq [el [(react/createElement "div" nil)
+                ((component/adapt raw-labeled) {:label "x"})]]
+      (let [e (try (component/adapt el) (catch :default e e))]
+        (is (= ::component/adapt-invalid-component (:type (ex-data e))))
+        (is (some? (re-find #"element" (ex-message e))))))))
+
+(deftest adapt-library-wrapper-throws-test
+  (testing "memo-component / forward-ref / memo-forward-ref results are rejected"
+    (doseq [wrapped [(component/memo-component (fn [_] nil))
+                     (component/forward-ref (fn [_] nil))
+                     (component/memo-forward-ref (fn [_] nil))]]
+      (let [e (try (component/adapt wrapped) (catch :default e e))]
+        (is (= ::component/adapt-cljs-component (:type (ex-data e)))
+            "a cljsProps-convention wrapper must not silently receive raw JS props")))))
+
+(deftest adapt-double-adapt-throws-test
+  (testing "adapting an adapted component is rejected at wrap time"
+    (let [Once (component/adapt raw-labeled)
+          e    (try (component/adapt Once) (catch :default e e))]
+      (is (= ::component/adapt-cljs-component (:type (ex-data e)))))))
+
+(deftest adapt-memo-component-js-test
+  (testing "a memo-component-js result accepts raw JS props and stays adaptable"
+    (let [Memo   (component/adapt
+                   (component/memo-component-js
+                     (fn [^js p] (react/createElement "b" nil (.-t p)))))
+          result (render (Memo {:t "js-memoized"}))]
+      (is (= "js-memoized" (.-textContent (.. result -container -firstChild))))
+      (cleanup))))
+
+(def ^:private raw-clicker
+  (fn [^js js-props]
+    (react/createElement "button" #js {:onClick (.-onClick js-props)}
+      (.-children js-props))))
+
+(deftest adapt-event-handler-test
+  (testing "a handler prop receives the DOM event and drives a state update"
+    (let [Btn    (component/adapt raw-clicker)
+          seen   (atom nil)
+          Probe  (fn [_]
+                   (let [open (hook/use-state false)]
+                     (react/createElement "div" nil
+                       (Btn {:onClick (fn [e]
+                                        (reset! seen (.-type e))
+                                        (reset! open true))}
+                         "open")
+                       (when @open
+                         (react/createElement "div" #js {:id "dialog"} "content")))))
+          result (render (react/createElement Probe))
+          btn    (.querySelector (.-container result) "button")]
+      (is (nil? (.querySelector (.-container result) "#dialog")))
+      (act #(.click btn))
+      (is (= "click" @seen) "handler received the DOM event")
+      (is (some? (.querySelector (.-container result) "#dialog")))
+      (cleanup))))
+
+(deftest adapt-controlled-input-test
+  (testing "value/onChange round trip through an adapted input"
+    (let [Input  (component/adapt "input")
+          Probe  (fn [_]
+                   (let [v (hook/use-state "a")]
+                     (react/createElement "div" nil
+                       (Input {:value @v
+                               :onChange #(reset! v (.. % -target -value))
+                               :aria-label "probe"})
+                       (react/createElement "span" #js {:id "echo"} @v))))
+          result (render (react/createElement Probe))
+          input  (.querySelector (.-container result) "input")]
+      (is (= "a" (.-value input)))
+      (.change fireEvent input #js {:target #js {:value "ab"}})
+      (is (= "ab" (.-value (.querySelector (.-container result) "input"))))
+      (is (= "ab" (.-textContent (.querySelector (.-container result) "#echo")))
+          "the CLJS state saw the typed value")
+      (cleanup))))
 
 ;;; memo-component-js
 

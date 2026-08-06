@@ -1,7 +1,7 @@
 (ns cljs.react.core
   "Public entry point for the `cljs.react` library. Re-exports the Element DSL,
-  hooks, memoized components, global-state (`db` + `Cursor`), form helpers, and
-  the error boundary.
+  JS-component interop (`adapt`), hooks, memoized components, global-state
+  (`db` + `Cursor`), form helpers, and the error boundary.
 
   Prefer requiring this namespace in consumer code; everything under
   `cljs.react.{component,hook,db,form,error-boundary}` is considered
@@ -47,6 +47,36 @@
    (component/*create-element* tag (component/element-props tag props) c1 c2 c3))
   ([{:keys [tag] :as props} c1 c2 c3 & more]
    (apply component/*create-element* tag (component/element-props tag props) c1 c2 c3 more)))
+
+(def ^{:doc "Wrap a raw JS React component (e.g. an npm default export) as a callable
+  CLJS component with the same call convention as defnc components:
+
+    (def Button (adapt MuiButton))
+    (Button)
+    (Button {:variant \"contained\"})
+    (Button {:variant \"contained\"} \"Save\")
+
+  Props are converted like Element props — nested maps become JS objects, a
+  RefAtom under :ref unwraps to the raw React ref, and :key works. Pass {}
+  (or nil) when children follow without props; anything else in props
+  position throws ex-info :type :cljs.react.component/adapt-invalid-props.
+  Elements are created through `*create-element*`, so custom renderers apply.
+
+  No React.memo wrapper is added — unlike a defnc component, an adapted
+  component re-renders whenever its parent does, exactly as when passed as an
+  Element :tag. Wrap first when memoization matters:
+  (adapt (react/memo MyComp)). Note that React.memo shallow-compares the
+  freshly converted JS props, so the memo holds only for flat props with
+  stable references — nested maps and inline handlers defeat it.
+
+  Definition-time guards, both ex-info:
+    :cljs.react.component/adapt-invalid-component — nil, module namespace
+      objects (a require missing its `$default` suffix), React elements (a
+      component that was already called), and other non-component values.
+    :cljs.react.component/adapt-cljs-component — components that already
+      speak the CLJS props convention: defnc components, adapted components,
+      and memo-component / forward-ref / memo-forward-ref results."}
+  adapt component/adapt)
 
 ;; Re-export ref utilities
 (def ^{:doc "Extract the raw React ref object from a RefAtom. Hand the raw ref to DOM

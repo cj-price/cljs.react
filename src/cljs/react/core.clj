@@ -81,4 +81,5 @@
                          ([props#] (build# memoized# props#))
                          ([props# & children#] (apply build# memoized# props# children#)))]
          (set! (.-displayName wrapper#) ~display-name)
+         (cljs.core/unchecked-set wrapper# "cljsReactWrapper" true)
          wrapper#))))

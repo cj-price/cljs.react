@@ -14,6 +14,7 @@
             [cljs.react.demo.boundaries :refer [BoundariesTab]]
             [cljs.react.demo.concurrent :refer [ConcurrentTab]]
             [cljs.react.demo.interop :refer [InteropTab]]
+            [cljs.react.demo.reagent :refer [ReagentTab]]
             [cljs.react.demo.mui :refer [MUITab]]
             [cljs.react.demo.sx :refer [SXTab]]
             [cljs.react.demo.util :refer [Div Span H1 Button Header
@@ -40,6 +41,7 @@
    {:title "Interop"
     :sections
     [{:id :interop    :title "Interop"          :emoji "🔌" :view InteropTab}
+     {:id :reagent    :title "Reagent"          :emoji "⚛️" :view ReagentTab}
      {:id :mui        :title "MUI"              :emoji "🎨" :view MUITab}]}
    {:title "Extras"
     :sections
@@ -205,13 +207,14 @@
    {:position :sticky :top (str "calc(" bar-h " + 1rem)") :bottom :auto
     :z-index :auto :width "240px" :flex-shrink 0 :transform :none
     :visibility :visible
-    :px 0 :py 1 :max-height (str "calc(100vh - " bar-h " - 2rem)")
+    :px 0.5 :py 1 :max-height (str "calc(100vh - " bar-h " - 2rem)")
     :bgcolor :transparent :border-right :none}})
 
 (defstyle nav-link
   {:display :flex :align-items :center :gap 0.75 :width "100%"
    :px 1.5 :py 1 :border-radius 1 :text-align :left
    :font-family :inherit :font-size "0.875rem" :font-weight 500
+   :line-height "20px"
    :cursor :pointer :border "1px solid transparent"
    :bgcolor :transparent :color :palette.text.secondary
    :transition "background-color 140ms ease, color 140ms ease"
@@ -230,8 +233,9 @@
 (defstyle nav-badge
   {:display :inline-flex :align-items :center :justify-content :center
    :margin-left :auto :flex-shrink 0
-   :px 0.75 :height "1.125rem" :border-radius "999px"
+   :px 0.75 :pt "1px" :height "1.125rem" :border-radius "999px"
    :font-size "0.5625rem" :font-weight 700 :letter-spacing "0.07em"
+   :text-indent "0.07em"
    :text-transform :uppercase :line-height 1
    :bgcolor :palette.warning.main :color :palette.warning.contrast-text
    :box-shadow 1})
@@ -239,6 +243,7 @@
 (defstyle nav-group-label
   {:px 1.5 :pt 2 :pb 0.5
    :font-size "0.6875rem" :font-weight 700 :letter-spacing "0.08em"
+   :line-height "18px"
    :text-transform :uppercase :color :palette.text.secondary
    ;; A heading first in the nav sits flush with the nav's own top padding.
    ;; `:first-child`, not `:first-of-type`: with the title-less Getting Started

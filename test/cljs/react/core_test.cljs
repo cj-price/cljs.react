@@ -227,6 +227,13 @@
       (is (= 2 @render-count) "different props → body runs again")
       (cleanup))))
 
+;;; adapt × defnc
+
+(deftest adapt-rejects-defnc-test
+  (testing "adapt on a defnc component throws instead of silently mis-rendering"
+    (let [e (try (core/adapt SimpleComp) (catch :default e e))]
+      (is (= :cljs.react.component/adapt-cljs-component (:type (ex-data e)))))))
+
 ;;; defnc :as-element
 
 (defnc RawJSComp :as-element
