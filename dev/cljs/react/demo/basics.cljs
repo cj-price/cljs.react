@@ -1,6 +1,6 @@
 (ns cljs.react.demo.basics
   (:require ["react" :as react]
-            [cljs.react.core :refer [Element use-state use-ref]]
+            [cljs.react.core :refer [Element adapt use-state use-ref]]
             [cljs.react.sx :refer [use-sx]]
             [cljs.react.demo.ui :refer [CodeAndOutput Btn Row Card CardTitle
                                         SectionTitle]]
@@ -130,11 +130,7 @@
                        :textTransform "uppercase"}}
       (.-label props))))
 
-(defn Badge
-  "Thin CLJS adapter so callers write (Badge {...}) instead of
-  (Element {:tag RawBadge ...})."
-  [props]
-  (Element (assoc props :tag RawBadge)))
+(def Badge (adapt RawBadge))
 
 ;; ── JS interop: event handlers ────────────────────────────────────────────────
 
@@ -244,7 +240,7 @@
 
     (CodeAndOutput
      {:title "Interop — Using a JS Component"
-      :code ";; Any JS component works as :tag.\n;; It reads var(--cx-…), so it follows the theme.\n\n(Element {:tag RawBadge :label \"New\"})\n(Element {:tag RawBadge :label \"Beta\"})\n(Element {:tag RawBadge :label \"Alpha\"})"}
+      :code ";; Any JS component works as :tag.\n\n(Element {:tag RawBadge :label \"New\"})\n(Element {:tag RawBadge :label \"Beta\"})\n(Element {:tag RawBadge :label \"Alpha\"})"}
      (Row {:gap 1}
        (Element {:tag RawBadge :label "New"})
        (Element {:tag RawBadge :label "Beta"})
@@ -252,7 +248,7 @@
 
     (CodeAndOutput
      {:title "Interop — Adapting a JS Component"
-      :code "(defn Badge [props]\n  (Element (assoc props :tag RawBadge)))\n\n(Badge {:label \"New\"})\n(Badge {:label \"Beta\"})\n(Badge {:label \"Alpha\"})"}
+      :code ";; adapt wraps a JS component once; the result\n;; is called like any defnc component.\n\n(def Badge (adapt RawBadge))\n\n(Badge {:label \"New\"})\n(Badge {:label \"Beta\"})\n(Badge {:label \"Alpha\"})"}
      (Row {:gap 1}
        (Badge {:label "New"})
        (Badge {:label "Beta"})

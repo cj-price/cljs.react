@@ -1,8 +1,9 @@
 (ns cljs.react.component
   "Component-authoring primitives: CLJS-props interop (`create-cljs-element`,
   `clj->js-props`), memoization wrappers (`memo-component`,
-  `memo-component-js`, `memo-forward-ref`), `forward-ref`, and the
-  `*create-element*` dynamic var for custom renderers.
+  `memo-component-js`, `memo-forward-ref`), `forward-ref`, `adapt` for
+  wrapping raw JS components, and the `*create-element*` dynamic var for
+  custom renderers.
 
   The `defnc` macro in `cljs.react.core` composes these for typical components;
   use this ns directly when defnc isn't a fit (custom renderer, manual
@@ -303,6 +304,15 @@
     (set! (.-displayName dst) n))
   dst)
 
+(defn- mark-cljs-wrapper!
+  "Stamp the cljsReactWrapper marker on a component that speaks the CLJS
+  props convention, so `adapt` rejects it at wrap time. String key on both
+  the write and the read side — survives :advanced. The defnc macro stamps
+  the same marker on its wrapper fn."
+  [component]
+  (unchecked-set component "cljsReactWrapper" true)
+  component)
+
 (defn memo-component
   "Wrap component with React.memo using ClojureScript equality.
 
@@ -325,10 +335,11 @@
   Returns:
     Memoized React component."
   [component-fn & {:keys [shallow?]}]
-  (propagate-display-name!
-    component-fn
-    (react/memo (fn [js-props] (component-fn (unwrap-cljs-props js-props)))
-                (cljs-props-comparator shallow?))))
+  (mark-cljs-wrapper!
+    (propagate-display-name!
+      component-fn
+      (react/memo (fn [js-props] (component-fn (unwrap-cljs-props js-props)))
+                  (cljs-props-comparator shallow?)))))
 
 (defn memo-component-js
   "Wrap component with React.memo for components that accept raw JS props.
@@ -347,6 +358,90 @@
   [component-fn]
   ;; Just use React.memo with default comparison (shallow equality)
   (propagate-display-name! component-fn (react/memo component-fn)))
+
+(defn- adaptable-type?
+  "True for values react/createElement accepts as an element type: component
+  fns and classes, string tags, exotic types (forwardRef, memo, lazy — JS
+  objects carrying $$typeof), and symbol types (Fragment, Suspense). A module
+  namespace object — the result of a require missing its `$default` suffix —
+  has none of these shapes and is rejected."
+  [x]
+  (or (fn? x)
+      (string? x)
+      (let [t (goog/typeOf x)]
+        (or (identical? "symbol" t)
+            (and (identical? "object" t)
+                 (some? (gobj/get x "$$typeof")))))))
+
+(defn- adapt-props
+  "Convert an adapt call's props argument, rejecting non-map values with a
+  typed ex-info. Without the check a string in props position dies with an
+  opaque IKVReduce protocol error and a vector silently converts to an
+  index-keyed JS object."
+  ^js [props]
+  (if (or (nil? props) (map? props))
+    (clj->js-props props)
+    (throw (ex-info "adapt component called with non-map props — pass {} (or nil) before children"
+                    {:type ::adapt-invalid-props :props props}))))
+
+(defn adapt
+  "Wrap a raw JS React component (e.g. an npm default export) as a callable
+  CLJS component with the same call convention as defnc components:
+
+    (def Button (adapt MuiButton))
+    (Button)
+    (Button {:variant \"contained\"})
+    (Button {:variant \"contained\"} \"Save\")
+
+  Props are converted with clj->js-props — nested maps become JS objects, a
+  RefAtom under :ref unwraps to the raw React ref, and :key is read by React
+  from the converted props. Pass {} (or nil) when children follow without
+  props; anything else in props position throws ex-info
+  :type ::adapt-invalid-props. Elements are created through *create-element*,
+  so custom renderers apply. String tags work ((adapt \"div\")), but prefer
+  Element for DOM elements.
+
+  No React.memo wrapper is added — unlike a defnc component, an adapted
+  component re-renders whenever its parent does, exactly as when passed as an
+  Element :tag. Wrap first when memoization matters:
+  (adapt (react/memo MyComp)). Note that React.memo shallow-compares the
+  freshly converted JS props, so the memo holds only for flat props with
+  stable references — nested maps and inline handlers defeat it.
+
+  Definition-time guards, both ex-info:
+    ::adapt-invalid-component — nil, module namespace objects (a require
+      missing its `$default` suffix), React elements (a component that was
+      already called), and other non-component values.
+    ::adapt-cljs-component    — components that already speak the CLJS props
+      convention: defnc components, adapted components, and memo-component /
+      forward-ref / memo-forward-ref results. Adapt would hand them raw JS
+      props instead of a CLJS map."
+  [js-component]
+  (when ^boolean (react/isValidElement js-component)
+    (throw (ex-info "adapt received a React element — pass the component itself, not the result of calling it"
+                    {:type ::adapt-invalid-component :component js-component})))
+  (when-not (adaptable-type? js-component)
+    (throw (ex-info (if (and (identical? "object" (goog/typeOf js-component))
+                             (some? (gobj/get js-component "default")))
+                      "adapt received a module namespace object — missing $default on the require?"
+                      "adapt requires a React component (fn, string tag, or React exotic type)")
+                    {:type ::adapt-invalid-component :component js-component})))
+  (when (and (or (fn? js-component)
+                 (identical? "object" (goog/typeOf js-component)))
+             (true? (gobj/get js-component "cljsReactWrapper")))
+    (throw (ex-info (if (fn? js-component)
+                      "adapt received a defnc or adapted component — call it directly instead"
+                      "adapt received a memo-component / forward-ref wrapper — it expects CLJS props; adapt would hand it raw JS props")
+                    {:type ::adapt-cljs-component :component js-component})))
+  (mark-cljs-wrapper!
+    (fn
+      ([] (*create-element* js-component nil))
+      ([props] (*create-element* js-component (adapt-props props)))
+      ([props c1] (*create-element* js-component (adapt-props props) c1))
+      ([props c1 c2] (*create-element* js-component (adapt-props props) c1 c2))
+      ([props c1 c2 c3] (*create-element* js-component (adapt-props props) c1 c2 c3))
+      ([props c1 c2 c3 & more]
+       (apply *create-element* js-component (adapt-props props) c1 c2 c3 more)))))
 
 (defn element-props
   "Validate the :tag key and convert the rest of the props map to a JS object.
@@ -401,24 +496,26 @@
   React's top-level ref takes precedence; the cljsProps :ref is the fallback
   path that makes the direct-call API work."
   [component-fn]
-  (propagate-display-name!
-    component-fn
-    (react/forwardRef
-      (fn [js-props react-ref]
-        (let [props (unwrap-cljs-props js-props)
-              raw   (or react-ref
-                        (let [r (:ref props)]
-                          (if (satisfies? hook/IReactRef r)
-                            (hook/-react-ref r)
-                            r)))]
-          (component-fn (assoc props :ref (hook/->RefAtom raw))))))))
+  (mark-cljs-wrapper!
+    (propagate-display-name!
+      component-fn
+      (react/forwardRef
+        (fn [js-props react-ref]
+          (let [props (unwrap-cljs-props js-props)
+                raw   (or react-ref
+                          (let [r (:ref props)]
+                            (if (satisfies? hook/IReactRef r)
+                              (hook/-react-ref r)
+                              r)))]
+            (component-fn (assoc props :ref (hook/->RefAtom raw)))))))))
 
 (defn memo-forward-ref
   "Combine forward-ref + React.memo with CLJS equality comparison.
 
   Accepts the same `:shallow? true` opt-out as [[memo-component]]."
   [component-fn & {:keys [shallow?]}]
-  (propagate-display-name!
-    component-fn
-    (react/memo (forward-ref component-fn)
-                (cljs-props-comparator shallow?))))
+  (mark-cljs-wrapper!
+    (propagate-display-name!
+      component-fn
+      (react/memo (forward-ref component-fn)
+                  (cljs-props-comparator shallow?)))))

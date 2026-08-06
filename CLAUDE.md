@@ -67,6 +67,10 @@ project-exec . bb bench-baseline  # Save baseline
 (defnc MyComp [{:keys [name]}]
   (Element {:tag "p"} name))
 
+;; JS interop — wrap a raw JS component once, call like a defnc component
+(def Button (adapt MuiButton))
+(Button {:variant "contained"} "Save")
+
 ;; Local state — returns StateAtom (deref / reset! / swap!)
 (let [s (use-state 0)]
   @s          ; read

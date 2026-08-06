@@ -247,3 +247,16 @@
                        (= @render-count (count (partition-by identity seq-props)))
                        (finally (.unmount r) (cleanup))))))]
     (is (:result result) (pr-str result))))
+
+(deftest adapt-element-tag-props-equivalence
+  (let [probe  (fn [_] nil)
+        result (tc/quick-check num-tests
+                 (prop/for-all [m props-gen]
+                   (let [m        (dissoc m :tag)
+                         el-adapt ((component/adapt probe) m)
+                         el-tag   (react/createElement
+                                    probe
+                                    (component/element-props probe (assoc m :tag probe)))]
+                     (= (js->clj (.-props ^js el-adapt) :keywordize-keys true)
+                        (js->clj (.-props ^js el-tag) :keywordize-keys true)))))]
+    (is (:result result) (pr-str result))))
