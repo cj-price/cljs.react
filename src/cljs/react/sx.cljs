@@ -300,7 +300,10 @@
   [^js props]
   (let [css (.-css props)]
     (react/useInsertionEffect
-      (fn [] (sheet/write-baseline! css) js/undefined)
+      (fn []
+        (sheet/ensure-default-vars!)
+        (sheet/write-baseline! css)
+        js/undefined)
       (hook/cljs-deps [css]))
     (react/createElement react/Fragment nil (.-children props))))
 
