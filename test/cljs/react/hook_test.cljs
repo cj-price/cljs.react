@@ -5,7 +5,7 @@
    [cljs.react.component :as component]
    ["global-jsdom/register"]
    ["react" :as react]
-   ["@testing-library/react" :refer [renderHook act render]]))
+   ["@testing-library/react" :refer [renderHook act render fireEvent]]))
 
 (deftest state-atom-test
   (testing "StateAtom returns derefable value"
@@ -48,17 +48,57 @@
       (act #(reset! ret (reset! state 42)))
       (is (= 42 @ret))))
 
-  (testing "StateAtom is = across renders (via IEquiv on setter identity)"
+  (testing "StateAtom is = across renders with the same slot and value"
     (let [result (renderHook #(hook/use-state 0))
           first-state (.. result -result -current)]
       (.rerender result)
       (let [second-state (.. result -result -current)]
         ;; Wrapper is fresh each render (snapshot semantics), but they compare
-        ;; equal under = because they share the same useState setter. This is
-        ;; what makes a StateAtom safe to place into cljs-deps.
+        ;; equal under = because both setter and snapshot value are unchanged.
+        ;; No-op renders therefore keep cljs-deps stable.
         (is (not (identical? first-state second-state)))
         (is (= first-state second-state))
         (is (= (hash first-state) (hash second-state))))))
+
+  (testing "same slot, structurally equal replacement values remain ="
+    (let [result (renderHook #(hook/use-state {:count 0}))
+          before (.. result -result -current)]
+      (act #(reset! before (into {} [[:count 0]])))
+      (let [after (.. result -result -current)]
+        (is (not (identical? @before @after)))
+        (is (= before after))
+        (is (= (hash before) (hash after))))))
+
+  (testing "same slot, changed value → not = (memo must see the change)"
+    (let [result (renderHook #(hook/use-state 0))
+          before (.. result -result -current)]
+      (act #(reset! before 1))
+      (let [after (.. result -result -current)]
+        (is (not= before after)
+            "wrappers on the same slot with different values must not compare ="))))
+
+  (testing "a memoized component fed a StateAtom re-renders when its value changes"
+    (let [renders (atom 0)
+          Child  (component/memo-component
+                   (fn [{:keys [s]}]
+                     (swap! renders inc)
+                     (react/createElement "span" #js {"data-testid" "child"} (str @s))))
+          Parent (fn [_]
+                   (let [s (hook/use-state 0)]
+                     (react/createElement "div" nil
+                       (component/create-cljs-element Child {:s s})
+                       (react/createElement "button"
+                         #js {"data-testid" "btn" :onClick #(swap! s inc)}
+                         "inc"))))
+          result (render (react/createElement Parent nil))]
+      (is (= "0" (.-textContent (.getByTestId result "child"))))
+      (is (= 1 @renders))
+      (.rerender result (react/createElement Parent nil))
+      (is (= 1 @renders) "unchanged parent render skips the memoized child")
+      (act #(.click fireEvent (.getByTestId result "btn")))
+      (is (= 2 @renders))
+      (is (= "1" (.-textContent (.getByTestId result "child")))
+          "memoized child must reflect the new StateAtom value, not a stale render")))
 
   (testing "StateAtoms from different useState slots are not ="
     (let [result (renderHook #(let [a (hook/use-state 0)
@@ -87,6 +127,35 @@
       (is (= 1 @calls) "init-fn invoked exactly once on mount")
       (.rerender result)
       (is (= 1 @calls) "init-fn not invoked again on re-render"))))
+
+(deftest state-atom-deps-test
+  (testing "[state] invalidates effects, memo values, and callbacks only on value changes"
+    (let [effects (atom [])
+          computations (atom 0)
+          result (renderHook
+                   #(let [s (hook/use-state 0)
+                          value (hook/use-memo
+                                  (fn [] (swap! computations inc) @s) [s])
+                          callback (hook/use-callback (fn [] @s) [s])]
+                      (hook/use-effect
+                        (fn [] (swap! effects conj @s) js/undefined) [s])
+                      {:state s :value value :callback callback}))
+          before (.. result -result -current)]
+      (is (= [0] @effects))
+      (is (= 1 @computations))
+      (.rerender result)
+      (is (= [0] @effects))
+      (is (= 1 @computations))
+      (is (identical? (:callback before)
+                      (:callback (.. result -result -current))))
+      (act #(reset! (:state before) 1))
+      (let [after (.. result -result -current)]
+        (is (= [0 1] @effects))
+        (is (= 2 @computations))
+        (is (= 1 (:value after)))
+        (is (not (identical? (:callback before) (:callback after))))
+        (is (= 1 ((:callback after))))
+        (is (= 0 ((:callback before))) "old callbacks retain their snapshot")))))
 
 (deftest cljs-deps-test
   (testing "same deps keep counter stable"

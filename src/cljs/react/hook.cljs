@@ -23,13 +23,16 @@
 
   ;; A fresh StateAtom is allocated each render, but two wrappers backed by
   ;; the same useState slot share the same setter — React guarantees setter
-  ;; identity is stable per hook position. So we use setter identity as the
-  ;; equivalence key: this gives callers stable `=` across renders without
-  ;; the hazards of caching a wrapper that mutates a render-spanning ref.
+  ;; identity is stable per hook position. Equality keys on BOTH the setter
+  ;; (same slot) and the current value: same-slot + same-value wrappers stay
+  ;; `=` across a no-op render (safe in cljs-deps and memo props), while a
+  ;; value change makes them unequal so a memoized `defnc` child fed a
+  ;; StateAtom re-renders instead of bailing out on a stale value.
   IEquiv
   (-equiv [_ other]
     (and (instance? StateAtom other)
-         (identical? (aget arr 1) (aget (.-arr ^StateAtom other) 1))))
+         (identical? (aget arr 1) (aget (.-arr ^StateAtom other) 1))
+         (= (aget arr 0) (aget (.-arr ^StateAtom other) 0))))
 
   IHash
   (-hash [_] (goog/getUid (aget arr 1))))
@@ -225,9 +228,16 @@
   in a closure reads the value at the render the closure was created in,
   NOT the latest committed value). If you need the latest value inside an
   async callback or interval, mirror it into a `use-ref` and deref the ref.
-  StateAtoms backed by the same useState slot compare equal under `=` (setter
-  identity is stable across renders), so a StateAtom is safe to place into
-  cljs.react use-effect / use-memo / use-callback deps.
+  Two StateAtoms compare equal under `=` when they share the same useState slot
+  AND hold the same value. A no-op render (unchanged value) keeps them `=`, so a
+  StateAtom is safe to place into cljs.react use-effect / use-memo / use-callback
+  deps; a value change makes them unequal so a memoized `defnc` child that
+  receives the StateAtom as a prop re-renders instead of showing a stale value.
+  A StateAtom in a deps vector compares unequal when its snapshot value changes.
+  A write-only callback may omit it from deps only if it always targets the same
+  hook slot and never reads the captured snapshot (use functional `swap!` for
+  updates based on previous state). A callback reading `@state` must include
+  `state` or its dereferenced value in deps to avoid a stale snapshot.
 
   NOTE: unlike a regular CLJS atom (and unlike RefAtom), `reset!`/`swap!` on a
   StateAtom do NOT synchronously return the new value — React's setter is

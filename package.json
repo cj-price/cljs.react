@@ -1,6 +1,6 @@
 {
   "name": "cljs-react",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Idiomatic ClojureScript bindings for React 19",
   "scripts": {
     "watch": "shadow-cljs watch demo",

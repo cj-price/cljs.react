@@ -15,7 +15,7 @@ Git dependency in `deps.edn`:
 {:deps
  {io.github.cj-price/cljs.react
   {:git/url "https://github.com/cj-price/cljs.react.git"
-   :git/tag "v0.2.2"
+   :git/tag "v0.3.0"
    :git/sha "<sha of the tagged commit>"}}}
 ```
 
@@ -475,9 +475,13 @@ so consumers can treat them like ordinary atoms.
 ### `StateAtom` — returned by `use-state`
 
 Wraps React's `[value setter]` tuple. A fresh `StateAtom` is allocated per
-render, but two wrappers backed by the same `useState` slot compare equal
-under `=` (setter identity is stable across renders), so a `StateAtom` is safe
-to place into `use-effect` / `use-memo` / `use-callback` deps.
+render. Two wrappers compare equal under `=` only when they share the same
+`useState` slot AND structurally equal snapshot values. Passing a `StateAtom`
+to a memoized child therefore lets value changes trigger a re-render.
+In `use-effect` / `use-memo` / `use-callback` deps, `[state]` stays equal on
+unchanged renders but invalidates when the snapshot value changes. This is a
+behavior change from setter-only equality: effects depending on `[state]`
+now rerun on value changes.
 
 ```clojure
 (let [n (use-state 0)]
@@ -519,9 +523,9 @@ Calling `use-db` outside a `DBProvider` throws `ex-info` with `:type
 ### `StaticStyle` — returned by `defstyle`
 
 `(defstyle card {...})` defines one `StaticStyle` per evaluation. Unlike
-`StateAtom` / `RefAtom` / `Cursor`, which key equality on a shared underlying
-object, the var itself *is* the identity: two `defstyle`s with identical maps
-are not `=`.
+`RefAtom` / `Cursor`, which key equality on a shared underlying object/path,
+or `StateAtom`, which also compares its snapshot value, the var itself *is*
+the identity: two `defstyle`s with identical maps are not `=`.
 
 ```clojure
 (defstyle card {:p 2})
@@ -593,9 +597,11 @@ A quick mental model of what causes a component to re-render:
   field's value / error / dirty / touched slice changes; `use-form-meta` only
   on meta changes. Typing in one field does not re-render the others.
 
-The wrapper types (`StateAtom`, `RefAtom`, `Cursor`) are all `=`-stable across
-renders for the same underlying slot/path, so they are safe to place directly in
-`use-effect` / `use-memo` / `use-callback` deps.
+`RefAtom` and `Cursor` are `=`-stable across renders for the same underlying
+ref/path. `StateAtom` is `=`-stable only when both its slot and snapshot value
+are unchanged by `=`. All can go directly in `use-effect` / `use-memo` /
+`use-callback` deps, but `[state]` tracks value changes, whereas `[ref]` and
+`[cursor]` do not track changes to their dereferenced contents.
 
 ## Troubleshooting
 
