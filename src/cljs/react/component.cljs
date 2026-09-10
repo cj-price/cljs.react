@@ -236,7 +236,8 @@
              (if (>= i n)
                true
                (let [k (aget ka i)]
-                 (if (js-value= (gobj/get a k) (gobj/get b k))
+                 (if (and (.call (.-hasOwnProperty js/Object.prototype) b k)
+                          (js-value= (gobj/get a k) (gobj/get b k)))
                    (recur (inc i))
                    false))))))
     :else (= a b)))
@@ -260,6 +261,7 @@
                       (let [acp (gobj/get ap "cljsProps")]
                         (if (some? acp)
                           (and (= acp (gobj/get bp "cljsProps"))
+                               (identical? (gobj/get ap "ref") (gobj/get bp "ref"))
                                (js-value= (gobj/get ap "children")
                                           (gobj/get bp "children")))
                           (js-value= ap bp)))))))))

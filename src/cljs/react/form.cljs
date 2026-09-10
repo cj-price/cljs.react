@@ -143,6 +143,36 @@
                         (contains? new-dirty field-key)))
              (touched-error-changed? old-s new-s field-key)))))
 
+(defn- begin-validation!
+  "Track each validation independently. Scope identifies which result wins;
+  pending tokens keep :validating? true until all async work has settled.
+  Resetting form state drops both collections, invalidating all old tokens."
+  [form-atom scope result]
+  (let [token #js {}]
+    (swap! form-atom
+           (fn [s]
+             (cond-> (assoc-in s [::latest-validation scope] token)
+               (instance? js/Promise result)
+               (-> (update ::pending-validations (fnil conj #{}) token)
+                   (assoc :validating? true)))))
+    token))
+
+(defn- finish-validation! [form-atom scope token apply-result]
+  (swap! form-atom
+         (fn [s]
+           (let [current? (identical? token (get-in s [::latest-validation scope]))
+                 pending (::pending-validations s)]
+             (if (or current? (contains? pending token))
+               (let [remaining (disj pending token)
+                     latest (cond-> (::latest-validation s) current? (dissoc scope))
+                     settled (cond-> (assoc s :validating? (boolean (seq remaining)))
+                               (seq remaining) (assoc ::pending-validations remaining)
+                               (not (seq remaining)) (dissoc ::pending-validations)
+                               (seq latest) (assoc ::latest-validation latest)
+                               (not (seq latest)) (dissoc ::latest-validation))]
+                 (if current? (apply-result settled) settled))
+               s)))))
+
 (defn- build-handlers [^FormHandle handle field-key checkbox?]
   (let [extract-fn (if checkbox?
                      #(.. % -target -checked)
@@ -164,22 +194,17 @@
                     (swap! form-atom update :touched conj field-key)
                     (when (= :blur (:validate-on @opts-ref))
                       (when-let [validate (:validate @opts-ref)]
-                        (let [result (call-validator validate (:values @form-atom))]
-                          (when (instance? js/Promise result)
-                            (swap! form-atom assoc :validating? true))
+                        (let [result (call-validator validate (:values @form-atom))
+                              scope [:blur field-key]
+                              token (begin-validation! form-atom scope result)]
                           (-> (js/Promise.resolve result)
                               (.then (fn [errs]
-                                       (swap! form-atom
-                                              (fn [s]
-                                                (-> s
-                                                    (assoc :validating? false)
-                                                    (assoc-in [:errors field-key]
-                                                              (get errs field-key)))))))
-                              ;; Rejected validator (sync or async) just clears
-                              ;; :validating? — blur is not the place to surface
-                              ;; validator bugs; submit will.
+                                       (finish-validation! form-atom scope token
+                                         #(assoc-in % [:errors field-key]
+                                                      (get errs field-key)))))
+                              ;; Blur does not surface validator exceptions.
                               (.catch (fn [_err]
-                                        (swap! form-atom assoc :validating? false))))))))]
+                                        (finish-validation! form-atom scope token identity))))))))]
     #js {:onChange on-change :onBlur on-blur}))
 
 ;;;; Hooks
@@ -200,7 +225,10 @@
                    back — other fields keep their existing errors untouched. A
                    cross-field error (e.g. password-confirmation keyed on a
                    different field) therefore surfaces when that field blurs or
-                   on submit, not from blurring an unrelated field.
+                   on submit, not from blurring an unrelated field. Overlapping
+                   blurs use the latest result for each field; reset invalidates
+                   pending results. :validating? stays true until all pending
+                   async validators (blur and submit) have settled.
 
   When :values is a plain map, it is captured once on first render — later
   changes to the same map key (e.g. props re-rendering with a new :values)
@@ -208,7 +236,8 @@
   un-dirtied fields will then follow changes to the watchable.
 
   Validator and submit failures (both sync throws and async rejections) are
-  funneled into :submit-error and reset :submitting? / :validating? to false.
+  funneled into :submit-error and reset :submitting? to false. :validating?
+  remains true if other async validators are still pending.
   :submit-error is cleared at the start of each new submit.
 
   Throws ex-info :type :cljs.react.form/invalid-validate-on if :validate-on
@@ -365,15 +394,14 @@
       (let [v        (:values new-s)
             validate (:validate @(.-opts-ref handle))
             vresult  (call-validator validate v)
+            token    (begin-validation! form-atom :submit vresult)
             ;; Apply f to the state only while this submit is still current.
             ;; A reset-form! mid-flight drops :submit-id, so a late completion
             ;; no-ops rather than resurrecting :submitting?/:submitted?.
             finish!  (fn [f] (swap! form-atom (fn [s] (if (= (:submit-id s) id) (f s) s))))]
-        (when (instance? js/Promise vresult)
-          (finish! #(assoc % :validating? true)))
         (-> (js/Promise.resolve vresult)
             (.then (fn [errs]
-                     (finish! #(assoc % :validating? false))
+                     (finish-validation! form-atom :submit token identity)
                      (if (and errs (pos? (count errs)))
                        (finish! #(assoc % :errors errs :submitting? false))
                        (-> (js/Promise.resolve (when submit-fn (submit-fn v)))
@@ -382,7 +410,8 @@
                            (.catch (fn [err]
                                      (finish! #(assoc % :submitting? false :submit-error err))))))))
             (.catch (fn [err]
-                      (finish! #(assoc % :validating? false :submitting? false :submit-error err)))))))))
+                      (finish-validation! form-atom :submit token identity)
+                      (finish! #(assoc % :submitting? false :submit-error err)))))))))
 
 (defn on-submit
   "Returns an onSubmit event handler.

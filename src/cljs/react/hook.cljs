@@ -254,14 +254,18 @@
              Equal projections (`=`) return the cached reference; this is
              required by React's tearing checks under useSyncExternalStore.
     deps   - vector of selector parameters whose change should rebuild the
-             subscription. Use `[]` for permanent subscriptions.
+             subscription. Use `[]` when there are no selector parameters.
+             Source changes always rebuild the subscription.
 
   Returns the most recent `(select state)`."
   [source diff? select deps]
   ;; Cache holds the last (source-state, projected-snapshot) pair. React calls
   ;; getSnapshot multiple times per render (commit + tearing checks). If the
   ;; source-state identity hasn't changed, skip select + structural-= entirely.
-  (let [cache-ref    (use-ref nil)
+  (let [deps         (conj deps source)
+        ;; Each selector/source version owns its cache; an abandoned concurrent
+        ;; render must not overwrite the committed selector's snapshot cache.
+        cache-ref    (use-memo #(atom nil) deps)
         subscribe    (use-callback
                        (fn [callback]
                          ;; Identity-keyed: a fresh JS object is unique per

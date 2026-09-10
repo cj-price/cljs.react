@@ -49,7 +49,7 @@
               old-val (if (seq path) (get-in old-state path) old-state)
               new-val (if (seq path) (get-in new-state path) new-state)]
           (when (not= old-val new-val)
-            (f [::cursor k cursor] cursor old-val new-val))))))
+            (f k cursor old-val new-val))))))
   (-remove-watch [cursor k]
     (remove-watch (.-atom cursor) [::cursor k cursor]))
 

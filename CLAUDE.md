@@ -111,7 +111,12 @@ use-effect   use-memo   use-callback   use-ref   use-atom   use-lazy-loadable
 - `use-state` returns a StateAtom; deref / reset! / swap! work natively
 - `use-db` returns a Cursor for reads/writes into global state (root 0-arity or path 1-arity)
 - `defnc` compiles to a React function component; use `memo-component` for memoization
-- Forms use per-field subscriptions — only affected fields re-render on change
+- Forms use per-field subscriptions — only affected fields re-render on change.
+  Blur and submit share pending-validation accounting; per-field blur tokens
+  reject out-of-order results, and resetting form state invalidates pending work.
+- `use-selector` always tracks source changes in addition to caller deps. Each
+  source/selector dependency version owns its snapshot cache, so switching a
+  selector cannot reuse a stale projection of an unchanged source state.
 - `*create-element*` dynamic var allows custom renderer injection
 - `use-lazy-loadable` (in `lazy.cljs`) bridges a `shadow.lazy/loadable` (or a 0-arg
   `() => Promise` loader) to `React.lazy` + Suspense; needs `:module-loader true`

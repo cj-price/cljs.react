@@ -12,7 +12,7 @@
 
 (defn- ^:no-doc eb-ctor [props]
   (let [self (js/Reflect.construct react/Component #js [props] EBClass)]
-    (set! (.-state self) #js {:error nil})
+    (set! (.-state self) #js {:error nil :hasError false})
     self))
 
 (def ^:no-doc ^js EBClass eb-ctor)
@@ -32,9 +32,10 @@
   (set! (.-render proto)
         (fn []
           (this-as this
-            (let [err   (.. this -state -error)
+            (let [state ^js (.-state this)
+                  err   (.-error state)
                   props ^js (.-props this)]
-              (if err
+              (if (.-hasError state)
                 ;; Guard the fallback render itself: if the user's fallback fn
                 ;; throws (e.g. a zero-arg fn called with one arg, or a broken
                 ;; element produced from the error), the boundary cannot catch
@@ -53,11 +54,11 @@
                       (str "ErrorBoundary :fallback threw: "
                            (or (.-message fb-err) (str fb-err))
                            "\n\nOriginal error: "
-                           (or (.-message err) (str err))))))
+                           (or (some-> err .-message) (str err))))))
                 (.-children props)))))))
 
 (set! (.-getDerivedStateFromError EBClass)
-      (fn [err] #js {:error err}))
+      (fn [err] #js {:error err :hasError true}))
 
 (defn ErrorBoundary
   "Render children inside a React error boundary.
